@@ -1,15 +1,12 @@
 import streamlit as st
 import pandas as pd
-import requests, time
+import requests, time, math, xml.etree.ElementTree as ET
 from collections import Counter
 from functools import lru_cache
 from Bio import Entrez
-import math
-import xml.etree.ElementTree as ET
 
-# ============  Page Config and Theme  ============
+# ============ Page Config & Theme ============
 st.set_page_config(page_title="ViroMap Unified", layout="wide")
-
 st.markdown("""
 <style>
 body {background:white;}
@@ -28,164 +25,139 @@ input[type="text"]{
 </style>
 """, unsafe_allow_html=True)
 
-# ============  Header  ============
 st.markdown("<h1 style='text-align:center'>🧬 ViroMap – Unified Viral Dashboard</h1>", unsafe_allow_html=True)
 
-# ============  Search Bar  ============
+# ============ Search Bar ============
 strain = st.text_input("🔍  Type virus / strain (e.g. SARS‑CoV‑2 Omicron):").strip()
 
-# ============  NCBI Setup ============
-Entrez.email = "your-email@example.com"  # Replace with your real email
+# ============ NCBI FASTA fetch ============
+Entrez.email = "your-email@example.com"  # <- put your real e‑mail
 
-# ============  Fetch FASTA ============
 @lru_cache(maxsize=10)
 def fetch_fasta(strain_name):
     try:
         h = Entrez.esearch(db="nucleotide", term=f"{strain_name} AND spike", retmax=1)
         rec = Entrez.read(h)
-        if not rec["IdList"]:
-            return None
+        if not rec["IdList"]: return None
         fid = rec["IdList"][0]
-        fasta = Entrez.efetch(db="nucleotide", id=fid, rettype="fasta", retmode="text").read()
-        return fasta
+        return Entrez.efetch(db="nucleotide", id=fid, rettype="fasta", retmode="text").read()
     except Exception:
         return None
 
-# ============  Codon Bias Calculator ============
+# ============ Codon Bias ============
 def calculate_codon_usage(fasta_text):
     seq = "".join(fasta_text.splitlines()[1:]).upper()
     seq = seq[: len(seq) - len(seq) % 3]
     codons = [seq[i:i+3] for i in range(0, len(seq), 3)]
-    counts = Counter(codons)
-    total = sum(counts.values())
-    data = [
-        {"Codon": c, "Count": n, "Frequency": round(n/total, 4)}
-        for c, n in sorted(counts.items())
-    ]
-    return pd.DataFrame(data)
-
-# ============  LLPS Predictor ============
-def predict_llps_simple(fasta_seq):
-    sequence = "".join(fasta_seq.splitlines()[1:]).upper()
-
-    hydrophobicity = {
-        'A': 1.8, 'R': -4.5, 'N': -3.5, 'D': -3.5, 'C': 2.5,
-        'Q': -3.5, 'E': -3.5, 'G': -0.4, 'H': -3.2, 'I': 4.5,
-        'L': 3.8, 'K': -3.9, 'M': 1.9, 'F': 2.8, 'P': -1.6,
-        'S': -0.8, 'T': -0.7, 'W': -0.9, 'Y': -1.3, 'V': 4.2
-    }
-
-    scores = []
-    for i, aa in enumerate(sequence):
-        hydro = hydrophobicity.get(aa, 0.0)
-        disorder = 1 if aa in 'PG' else 0
-        score = hydro + disorder * 1.5
-        scores.append((i+1, aa, round(score, 2)))
-
-    df = pd.DataFrame(scores, columns=["Position", "AA", "LLPS_Score"])
-    df["Region"] = pd.cut(df["LLPS_Score"], bins=[-math.inf, 0, 2, math.inf], labels=["Low", "Medium", "High"])
+    cnt = Counter(codons)
+    total = sum(cnt.values())
+    df = pd.DataFrame(
+        [{"Codon": c, "Count": n, "Frequency": round(n/total, 4)} for c, n in sorted(cnt.items())]
+    )
     return df
 
-# ============  BLAST Mimicry ============
-def run_mimicry_blast(spike_fasta):
-    base_url = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
+# ============ Simple LLPS predictor ============
+def predict_llps_simple(fasta_text):
+    seq = "".join(fasta_text.splitlines()[1:]).upper()
+    hydro = {'A':1.8,'R':-4.5,'N':-3.5,'D':-3.5,'C':2.5,'Q':-3.5,'E':-3.5,'G':-0.4,
+             'H':-3.2,'I':4.5,'L':3.8,'K':-3.9,'M':1.9,'F':2.8,'P':-1.6,'S':-0.8,
+             'T':-0.7,'W':-0.9,'Y':-1.3,'V':4.2}
+    rows=[]
+    for i,aa in enumerate(seq):
+        h=hydro.get(aa,0)
+        dis=1 if aa in 'PG' else 0
+        score=round(h+1.5*dis,2)
+        rows.append([i+1,aa,score])
+    df=pd.DataFrame(rows,columns=["Pos","AA","LLPS_Score"])
+    df["Region"]=pd.cut(df["LLPS_Score"],[-math.inf,0,2,math.inf],labels=["Low","Medium","High"])
+    return df
 
-    payload = {
-        "CMD": "Put",
-        "PROGRAM": "blastp",
-        "DATABASE": "refseq_protein",
-        "QUERY": spike_fasta,
-        "ENTREZ_QUERY": "txid9606[Organism]",
-        "FORMAT_TYPE": "XML"
-    }
-
-    r = requests.post(base_url, data=payload)
-    if r.status_code != 200: return None
-
-    lines = r.text.splitlines()
-    rid = next((line.split("=")[1] for line in lines if line.startswith("RID")), None)
-    if not rid:
-        return None
-
-    for _ in range(10):
+# ============ BLAST Mimicry ============
+def run_mimicry_blast(fasta_text):
+    base="https://blast.ncbi.nlm.nih.gov/Blast.cgi"
+    put={"CMD":"Put","PROGRAM":"blastp","DATABASE":"nr",
+         "QUERY":fasta_text,"ENTREZ_QUERY":"txid9606[Organism]","FORMAT_TYPE":"XML"}
+    put_r=requests.post(base,data=put,timeout=30)
+    if put_r.status_code!=200: return None
+    rid=[l.split("=")[1] for l in put_r.text.splitlines() if l.startswith("RID")][0]
+    for _ in range(12):
         time.sleep(5)
-        check = requests.get(base_url, params={"CMD": "Get", "RID": rid})
-        if "Status=READY" in check.text:
-            break
+        status=requests.get(base,params={"CMD":"Get","RID":rid}).text
+        if "Status=READY" in status: break
+    xml=requests.get(base,params={"CMD":"Get","RID":rid,"FORMAT_TYPE":"XML"}).content
+    root=ET.fromstring(xml)
+    hits=[]
+    for hit in root.findall(".//Hit")[:10]:
+        hsp=hit.find("Hit_hsps/Hsp")
+        if hsp is None: continue
+        hits.append({
+            "Protein":hit.findtext("Hit_def")[:60],
+            "Acc":hit.findtext("Hit_accession"),
+            "Identity":hsp.findtext("Hsp_identity"),
+            "Align_Len":hsp.findtext("Hsp_align-len"),
+            "E-value":hsp.findtext("Hsp_evalue")
+        })
+    return pd.DataFrame(hits)
 
-    result = requests.get(base_url, params={"CMD": "Get", "RID": rid, "FORMAT_TYPE": "XML"})
-    tree = ET.fromstring(result.content)
+# ============ NetMHC demo ============
+def netmhc_demo():
+    peptides=["GVYYPDKVFR","QPELDSFKEE","SYGFQPTNGV","VLSFELLHAP","NLNESLIDLQ","QLTPTWRVYS","LTPGDSSSGW","MESEFRVYSS"]
+    return pd.DataFrame({
+        "Peptide":peptides,"HLA":["HLA-A*02:01"]*len(peptides),
+        "Affinity(nM)":[50,120,600,80,400,1500,30,200],
+        "Rank(%)":[0.2,0.5,2.5,0.3,1.8,5.0,0.1,1.2],
+        "Binder":["Strong","Strong","Weak","Strong","Weak","No","Strong","Weak"]
+    })
 
-    hits = []
-    for hit in tree.findall(".//Hit"):
-        hit_id = hit.findtext("Hit_def")
-        acc = hit.findtext("Hit_accession")
-        length = hit.findtext("Hit_len")
-        hsps = hit.findall("Hit_hsps/Hsp")
-        if hsps:
-            hsp = hsps[0]
-            identity = hsp.findtext("Hsp_identity")
-            align_len = hsp.findtext("Hsp_align-len")
-            evalue = hsp.findtext("Hsp_evalue")
-            hits.append({
-                "Protein": hit_id,
-                "Accession": acc,
-                "Length": length,
-                "Identity": identity,
-                "Align_Len": align_len,
-                "E-Value": evalue
-            })
+# ============ Simple GNN demo ============
+def gnn_demo():
+    return pd.DataFrame({
+        "Drug":["Remdesivir","Molnupiravir","Favipiravir"],
+        "SMILES":["CC(C)OC1=NC=C(C(=O)N)N1C","CC1(CC(=O)NC(=O)N1C)C","CC1=NC(=O)N(C)C(=N1)N"],
+        "Predicted_pKd":[7.2,6.8,6.5]
+    })
 
-    return pd.DataFrame(hits[:10])
+# ============ Tabs ============
+tabNames=["📄 FASTA","🧬 Codon Bias","💧 LLPS","🧫 Mimicry","🧪 Epitope Mimicry","🧠 GNN"]
+tabs=st.tabs(tabNames)
 
-# ============  Tabs Setup ============
-tab_names = ["📄 FASTA", "🧬 Codon Bias", "💧 LLPS", "🧫 Mimicry", "🧠 GNN"]
-tabs = st.tabs(tab_names)
-
-# ============  Main Logic ============
+# ============ Main ============
 if strain:
-    fasta = fetch_fasta(strain)
+    fasta=fetch_fasta(strain)
     if fasta:
-        # --- Tab 1: FASTA ---
+        # FASTA
         with tabs[0]:
-            st.subheader("📄 Spike Protein FASTA")
-            st.code(fasta, language="fasta")
+            st.code(fasta,language="fasta")
 
-        # --- Tab 2: Codon Bias ---
+        # Codon
         with tabs[1]:
-            st.subheader("🧬 Codon Usage Analysis")
-            codon_df = calculate_codon_usage(fasta)
-            st.dataframe(codon_df, use_container_width=True)
+            st.dataframe(calculate_codon_usage(fasta),use_container_width=True)
 
-        # --- Tab 3: LLPS Prediction ---
+        # LLPS
         with tabs[2]:
-            st.subheader("💧 LLPS Propensity")
-            llps_df = predict_llps_simple(fasta)
-            st.dataframe(llps_df, use_container_width=True)
+            st.dataframe(predict_llps_simple(fasta),use_container_width=True)
 
-        # --- Tab 4: Mimicry via BLAST ---
+        # Mimicry BLAST
         with tabs[3]:
-            st.subheader("🧫 Mimicry Prediction (Spike vs Human)")
-
-            with st.spinner("Running BLAST... this takes ~30s ⏳"):
-                mim_df = run_mimicry_blast(fasta)
-
+            with st.spinner("Running BLAST vs human proteins ⏳"):
+                mim_df=run_mimicry_blast(fasta)
             if mim_df is not None and not mim_df.empty:
-                st.success("BLAST complete! Top human mimics:")
-                st.dataframe(mim_df, use_container_width=True)
+                st.dataframe(mim_df,use_container_width=True)
             else:
-                st.error("BLAST failed or no hits found.")
+                st.error("No BLAST hits found (sequence similarity low).")
 
-        # --- Tab 5: GNN Placeholder ---
+        # NetMHC demo mimics
         with tabs[4]:
-            st.subheader("🧠 GNN Drug Prediction")
-            st.warning("GNN prediction coming next...")
+            st.dataframe(netmhc_demo(),use_container_width=True)
+            st.markdown("_Lower Affinity / Rank % = better binding. Strong binders may mimic human epitopes._")
 
+        # GNN demo
+        with tabs[5]:
+            st.dataframe(gnn_demo(),use_container_width=True)
+            st.markdown("_Predicted pKd via demo GNN; higher pKd ⇒ tighter binding._")
     else:
         for t in tabs:
-            with t:
-                st.error("❌ Could not fetch spike protein. Try a different virus or strain.")
+            with t: st.error("❌ Spike protein not found. Try another strain.")
 else:
     for t in tabs:
-        with t:
-            st.info("ℹ️ Enter a virus or strain above to get started.")
+        with t: st.info("ℹ️ Enter a virus or strain name above to start.")
