@@ -13,12 +13,16 @@ st.markdown("""
 body {background:white;}
 h1 {color:#AA336A;}
 .stTabs [data-baseweb="tab"] {
-    background:#f8f8f8; border:2px solid #ccc;
+    background:#f2f2f2; border:2px solid #ccc;
     padding:10px 15px; margin-right:6px;
-    border-radius:8px; font-weight:600; color:#444;
+    border-radius:8px; font-weight:600; color:#333;
 }
 .stTabs [aria-selected="true"] {
     background:#AA336A !important; color:white !important;
+}
+input[type="text"] {
+    height: 36px !important;
+    font-size: 14px !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -27,7 +31,7 @@ h1 {color:#AA336A;}
 # App Title and Search
 # -------------------
 st.markdown("<h1 style='text-align:center'>🧬 ViroMap – Unified Search</h1>", unsafe_allow_html=True)
-strain = st.text_input("🔍 Type virus name (e.g. SARS-CoV-2 Omicron):").strip()
+strain = st.text_input("🔍 Type virus name (e.g. SARS-CoV-2 Omicron):", key="strain_input").strip()
 
 # -------------------
 # Email for NCBI fetch
@@ -51,7 +55,6 @@ def fetch_fasta(strain_name):
         return None
 
 def get_demo_data(name):
-    # This is where your demo CSVs go
     path = f"data/{name}_demo.csv"
     try:
         return pd.read_csv(path)
@@ -59,9 +62,9 @@ def get_demo_data(name):
         return pd.DataFrame()
 
 # -------------------
-# Tabs for the sections
+# Tabs including FASTA as first tab
 # -------------------
-tab_names = ["🧬 Codon Bias", "💧 LLPS", "🧫 Mimicry", "🧠 GNN Predictions"]
+tab_names = ["📄 FASTA Sequence", "🧬 Codon Bias", "💧 LLPS", "🧫 Mimicry", "🧠 GNN Predictions"]
 tabs = st.tabs(tab_names)
 
 # -------------------
@@ -70,31 +73,33 @@ tabs = st.tabs(tab_names)
 if strain:
     fasta = fetch_fasta(strain)
     if fasta:
-        # You can display FASTA if you want
-        st.success("Spike protein FASTA found!")
-        st.code(fasta, language="fasta")
-
         with tabs[0]:
+            st.subheader("📄 Spike Protein FASTA")
+            st.code(fasta, language="fasta")
+
+        with tabs[1]:
             st.subheader("🧬 Codon Bias")
             df = get_demo_data("codon")
             st.dataframe(df, use_container_width=True)
 
-        with tabs[1]:
+        with tabs[2]:
             st.subheader("💧 LLPS Prediction")
             df = get_demo_data("llps")
             st.dataframe(df, use_container_width=True)
 
-        with tabs[2]:
+        with tabs[3]:
             st.subheader("🧫 Mimicry Summary")
             df = get_demo_data("mimicry")
             st.dataframe(df, use_container_width=True)
 
-        with tabs[3]:
+        with tabs[4]:
             st.subheader("🧠 GNN Drug Predictions")
             df = get_demo_data("gnn")
             st.dataframe(df, use_container_width=True)
     else:
-        st.error("❌ Could not fetch spike protein for that strain. Try another.")
+        for t in tabs:
+            with t:
+                st.error("❌ Could not fetch spike protein for that strain. Try another.")
 else:
     for t in tabs:
         with t:
