@@ -1,0 +1,4 @@
+Drug,SMILES,Target,GNN_pKd
+Favipiravir,CC1=NC(=O)N(C)C(=N1)N,Spike Protein,6.85
+Molnupiravir,CC1(CC(=O)NC(=O)N1C)C,Spike Protein,7.12
+Remdesivir,CC(C)OC1=NC=C(C(=O)N)N1C,Spike Protein,7.43
