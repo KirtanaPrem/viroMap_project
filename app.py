@@ -27,30 +27,47 @@ input[type="text"]{
 
 st.markdown("<h1 style='text-align:center'>🧬 ViroMap – Unified Viral Dashboard</h1>", unsafe_allow_html=True)
 
-# ------------- Search bar -------------
-strain = st.text_input("🔍  Type virus / strain (e.g. SARS‑CoV‑2 Wuhan, HIV‑1):").strip()
+# ------------- Search & Selection -------------
+Entrez.email = "your@email.com"   # Change this
 
-# ------------- NCBI email -------------
-Entrez.email = "your@email.com"   # CHANGE to your email
+strain = st.text_input("🔍 Type virus / strain (e.g. SARS-CoV-2, HIV-1):").strip()
+strain_matches = []
+selected_id = None
+fasta = None
 
-# ------------- FASTA fetch (improved) -------------
 @lru_cache(maxsize=10)
-@lru_cache(maxsize=10)
-def fetch_fasta(strain_name):
+def get_strain_matches(query):
     try:
-        query = f'"{strain_name}"[Organism] AND (spike OR envelope OR surface)[Title] AND biomol_mrna[PROP]'
-        handle = Entrez.esearch(db="nucleotide", term=query, retmax=1, sort="relevance")
+        handle = Entrez.esearch(db="nucleotide", term=f'"{query}"[Organism] AND biomol_mrna[PROP]', retmax=10)
         record = Entrez.read(handle)
-        if not record["IdList"]:
-            return None
-        fid = record["IdList"][0]
-        fasta = Entrez.efetch(db="nucleotide", id=fid, rettype="fasta", retmode="text").read()
-        return fasta
-    except Exception as e:
+        ids = record["IdList"]
+        if not ids:
+            return []
+        summaries = Entrez.esummary(db="nucleotide", id=",".join(ids))
+        summary_data = Entrez.read(summaries)
+        return [(doc["Title"], doc["Id"]) for doc in summary_data]
+    except:
+        return []
+
+def fetch_fasta_by_id(ncbi_id):
+    try:
+        return Entrez.efetch(db="nucleotide", id=ncbi_id, rettype="fasta", retmode="text").read()
+    except:
         return None
 
+if strain:
+    with st.spinner("🔎 Searching NCBI..."):
+        strain_matches = get_strain_matches(strain)
 
-# ------------- Codon bias -------------
+    if strain_matches:
+        titles = [f"{title[:70]}..." if len(title) > 70 else title for title, _ in strain_matches]
+        selected = st.selectbox("🧬 Select matching strain from NCBI:", titles)
+        selected_id = strain_matches[titles.index(selected)][1]
+        fasta = fetch_fasta_by_id(selected_id)
+    else:
+        st.warning("❌ No matching strains found in NCBI.")
+
+# ------------- Codon Bias -------------
 def calculate_codon_usage(fasta_text):
     seq = "".join(fasta_text.splitlines()[1:]).upper()
     seq = seq[: len(seq) - len(seq) % 3]
@@ -61,7 +78,7 @@ def calculate_codon_usage(fasta_text):
         [{"Codon": c, "Count": n, "Freq": round(n / total, 4)} for c, n in sorted(cnt.items())]
     )
 
-# ------------- simple LLPS predictor -------------
+# ------------- LLPS -------------
 def predict_llps_simple(fasta_text):
     hydro = {'A':1.8,'R':-4.5,'N':-3.5,'D':-3.5,'C':2.5,'Q':-3.5,'E':-3.5,'G':-0.4,
              'H':-3.2,'I':4.5,'L':3.8,'K':-3.9,'M':1.9,'F':2.8,'P':-1.6,'S':-0.8,
@@ -77,7 +94,7 @@ def predict_llps_simple(fasta_text):
     df["Region"]=pd.cut(df["LLPS_Score"],[-math.inf,0,2,math.inf],labels=["Low","Medium","High"])
     return df
 
-# ------------- BLAST mimicry (safe) -------------
+# ------------- Mimicry BLAST -------------
 def run_mimicry_blast(fasta_text):
     base = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
     put = {
@@ -111,17 +128,17 @@ def run_mimicry_blast(fasta_text):
                 "E-value":hsp.findtext("Hsp_evalue")
             })
         return pd.DataFrame(hits)
-    except Exception:
+    except:
         return None
 
 # ------------- NetMHC (demo) -------------
 def netmhc_demo():
-    peptides=["GVYYPDKVFR","QPELDSFKEE","SYGFQPTNGV","VLSFELLHAP","NLNESLIDLQ","QLTPTWRVYS","LTPGDSSSGW","MESEFRVYSS"]
+    peptides=["GVYYPDKVFR","QPELDSFKEE","SYGFQPTNGV","VLSFELLHAP"]
     return pd.DataFrame({
         "Peptide":peptides,"HLA":["HLA-A*02:01"]*len(peptides),
-        "Affinity(nM)":[50,120,600,80,400,1500,30,200],
-        "Rank%":[0.2,0.5,2.5,0.3,1.8,5.0,0.1,1.2],
-        "Binder":["Strong","Strong","Weak","Strong","Weak","No","Strong","Weak"]
+        "Affinity(nM)":[50,120,600,80],
+        "Rank%":[0.2,0.5,2.5,0.3],
+        "Binder":["Strong","Strong","Weak","Strong"]
     })
 
 # ------------- GNN (demo) -------------
@@ -135,31 +152,27 @@ def gnn_demo():
 tab_names=["📄 FASTA","🧬 Codon Bias","💧 LLPS","🧫 Mimicry","🧪 Epitope","🧠 GNN"]
 tabs=st.tabs(tab_names)
 
-# ------------- Main logic -------------
-if strain:
-    fasta=fetch_fasta(strain)
-    if fasta:
-        tabs[0].code(fasta,language="fasta")
-        tabs[1].dataframe(calculate_codon_usage(fasta),use_container_width=True)
-        tabs[2].dataframe(predict_llps_simple(fasta),use_container_width=True)
+# ------------- Main Display -------------
+if fasta:
+    tabs[0].code(fasta,language="fasta")
+    tabs[1].dataframe(calculate_codon_usage(fasta),use_container_width=True)
+    tabs[2].dataframe(predict_llps_simple(fasta),use_container_width=True)
 
-        with tabs[3]:
-            st.subheader("🧫 BLAST vs Human (Mimicry)")
-            with st.spinner("Running BLAST (~30 s)…"):
-                mdf=run_mimicry_blast(fasta)
-            if mdf is not None and not mdf.empty:
-                st.dataframe(mdf,use_container_width=True)
-            else:
-                st.warning("No close sequence matches; try structure/epitope mimicry instead.")
+    with tabs[3]:
+        st.subheader("🧫 BLAST vs Human (Mimicry)")
+        with st.spinner("Running BLAST (~30 s)…"):
+            mdf=run_mimicry_blast(fasta)
+        if mdf is not None and not mdf.empty:
+            st.dataframe(mdf,use_container_width=True)
+        else:
+            st.warning("No close sequence matches found.")
 
-        tabs[4].dataframe(netmhc_demo(),use_container_width=True)
-        tabs[4].caption("Lower Affinity & Rank% = stronger HLA binding (demo).")
+    tabs[4].dataframe(netmhc_demo(),use_container_width=True)
+    tabs[4].caption("Lower Affinity & Rank% = stronger HLA binding (demo).")
 
-        tabs[5].dataframe(gnn_demo(),use_container_width=True)
-        tabs[5].caption("Predicted pKd (demo). Higher = stronger binding.")
-    else:
-        for t in tabs:
-            with t: st.error("❌ No protein FASTA found for this organism/strain.")
+    tabs[5].dataframe(gnn_demo(),use_container_width=True)
+    tabs[5].caption("Predicted pKd (demo). Higher = stronger drug binding.")
 else:
     for t in tabs:
-        with t: st.info("ℹ️ Enter a virus/strain name to begin.")
+        with t:
+            st.info("ℹ️ Search a virus and select a matching strain to continue.")
