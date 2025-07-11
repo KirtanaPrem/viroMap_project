@@ -47,19 +47,27 @@ with tabs[3]:
 with tabs[4]:
     st.header("🧠 Real GNN Predictions for COVID-19 Spike Protein")
 
-    # Load predictions CSV you uploaded into /data/
-    try:
-        gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
-        st.dataframe(gnn_df, use_container_width=True)
+    gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
 
-        st.subheader("📊 GNN-pKd Score Visualization")
-        st.bar_chart(gnn_df.set_index("Drug")["GNN_pKd"])
+    # 🔍 Search
+    search_term = st.text_input("Search Drug", "")
+    filtered_df = gnn_df[gnn_df["Drug"].str.contains(search_term, case=False)]
 
-        st.download_button(
-            label="📥 Download Predictions CSV",
-            data=gnn_df.to_csv(index=False),
-            file_name="real_gnn_predictions.csv",
-            mime="text/csv"
-        )
-    except FileNotFoundError:
-        st.error("real_gnn_predictions.csv not found. Please upload it to the /data/ folder in GitHub.")
+    # 🟢 Highlighted Scores
+    def highlight_score(val):
+        color = 'green' if val > 7.2 else 'orange' if val > 6.9 else 'red'
+        return f'color: {color}'
+
+    st.dataframe(filtered_df.style.applymap(highlight_score, subset=["GNN_pKd"]))
+
+    # 📊 Bar Chart
+    st.subheader("📊 Binding Affinity (GNN-pKd)")
+    st.bar_chart(filtered_df.set_index("Drug")["GNN_pKd"])
+
+    # 📥 Download
+    st.download_button(
+        label="Download CSV",
+        data=filtered_df.to_csv(index=False),
+        file_name="real_gnn_predictions.csv",
+        mime="text/csv"
+    )
