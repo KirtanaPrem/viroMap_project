@@ -4,8 +4,9 @@ import requests, time, math, xml.etree.ElementTree as ET
 from collections import Counter
 from functools import lru_cache
 from Bio import Entrez
+from DeepPurpose import utils, onedrug
 
-# ------------- Page look & feel -------------
+# ------------------- CONFIG & STYLE -------------------
 st.set_page_config(page_title="ViroMap Unified", layout="wide")
 st.markdown("""
 <style>
@@ -27,8 +28,8 @@ input[type="text"]{
 
 st.markdown("<h1 style='text-align:center'>🧬 ViroMap – Unified Viral Dashboard</h1>", unsafe_allow_html=True)
 
-# ------------- Search & Selection -------------
-Entrez.email = "your@email.com"   # Change this
+# ------------------- NCBI Search -------------------
+Entrez.email = "your@email.com"  # Replace with your email
 
 strain = st.text_input("🔍 Type virus / strain (e.g. SARS-CoV-2, HIV-1):").strip()
 strain_matches = []
@@ -67,7 +68,7 @@ if strain:
     else:
         st.warning("❌ No matching strains found in NCBI.")
 
-# ------------- Codon Bias -------------
+# ------------------- Codon Bias -------------------
 def calculate_codon_usage(fasta_text):
     seq = "".join(fasta_text.splitlines()[1:]).upper()
     seq = seq[: len(seq) - len(seq) % 3]
@@ -78,7 +79,7 @@ def calculate_codon_usage(fasta_text):
         [{"Codon": c, "Count": n, "Freq": round(n / total, 4)} for c, n in sorted(cnt.items())]
     )
 
-# ------------- LLPS -------------
+# ------------------- LLPS -------------------
 def predict_llps_simple(fasta_text):
     hydro = {'A':1.8,'R':-4.5,'N':-3.5,'D':-3.5,'C':2.5,'Q':-3.5,'E':-3.5,'G':-0.4,
              'H':-3.2,'I':4.5,'L':3.8,'K':-3.9,'M':1.9,'F':2.8,'P':-1.6,'S':-0.8,
@@ -94,7 +95,7 @@ def predict_llps_simple(fasta_text):
     df["Region"]=pd.cut(df["LLPS_Score"],[-math.inf,0,2,math.inf],labels=["Low","Medium","High"])
     return df
 
-# ------------- Mimicry BLAST -------------
+# ------------------- Mimicry BLAST -------------------
 def run_mimicry_blast(fasta_text):
     base = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
     put = {
@@ -131,7 +132,7 @@ def run_mimicry_blast(fasta_text):
     except:
         return None
 
-# ------------- NetMHC (demo) -------------
+# ------------------- NetMHC Demo -------------------
 def netmhc_demo():
     peptides=["GVYYPDKVFR","QPELDSFKEE","SYGFQPTNGV","VLSFELLHAP"]
     return pd.DataFrame({
@@ -141,37 +142,60 @@ def netmhc_demo():
         "Binder":["Strong","Strong","Weak","Strong"]
     })
 
-# ------------- GNN (demo) -------------
-def gnn_demo():
-    return pd.DataFrame({
-        "Drug":["Remdesivir","Molnupiravir","Favipiravir"],
-        "pKd":[7.2,6.8,6.5]
-    })
+# ------------------- GNN Real Prediction -------------------
+@st.cache_resource
+def load_model():
+    drug_encoding = 'SMILES'
+    target_encoding = 'AAC'
+    return onedrug.model_initialize(drug_encoding, target_encoding, pretrained=True)
 
-# ------------- Tabs -------------
+@st.cache_data
+def gnn_predict(fasta_seq):
+    target_seq = "".join(fasta_seq.splitlines()[1:]).strip()
+    drugs = {
+        "Remdesivir": "CCC(C)OC(=O)[C@H](C)NP(=O)(OC[C@H]1O[C@@](C#N)(c2ccc3c(N)ncnn23)[C@H](O)[C@@H]1O)Oc1ccccc1",
+        "Molnupiravir": "CC1=CC=C(C=C1)C(CNC(=O)OC)OC(=O)C(C)C",
+        "Favipiravir": "NC(=O)c1nc(F)c[nH]c1=O"
+    }
+    model = load_model()
+    drug_list = list(drugs.values())
+    drug_names = list(drugs.keys())
+    df = pd.DataFrame([[d, target_seq] for d in drug_list], columns=["SMILES", "Target Sequence"])
+    test_data = utils.data_process(df, drug_encoding='SMILES', target_encoding='AAC',
+                                   split_method='no_split', mode='pKd')
+    scores = model.predict(test_data)
+    return pd.DataFrame({
+        "Drug": drug_names,
+        "pKd": [round(s, 2) for s in scores]
+    }).sort_values("pKd", ascending=False)
+
+# ------------------- Tabs -------------------
 tab_names=["📄 FASTA","🧬 Codon Bias","💧 LLPS","🧫 Mimicry","🧪 Epitope","🧠 GNN"]
 tabs=st.tabs(tab_names)
 
-# ------------- Main Display -------------
 if fasta:
-    tabs[0].code(fasta,language="fasta")
-    tabs[1].dataframe(calculate_codon_usage(fasta),use_container_width=True)
-    tabs[2].dataframe(predict_llps_simple(fasta),use_container_width=True)
+    tabs[0].code(fasta, language="fasta")
+    tabs[1].dataframe(calculate_codon_usage(fasta), use_container_width=True)
+    tabs[2].dataframe(predict_llps_simple(fasta), use_container_width=True)
 
     with tabs[3]:
         st.subheader("🧫 BLAST vs Human (Mimicry)")
         with st.spinner("Running BLAST (~30 s)…"):
-            mdf=run_mimicry_blast(fasta)
+            mdf = run_mimicry_blast(fasta)
         if mdf is not None and not mdf.empty:
-            st.dataframe(mdf,use_container_width=True)
+            st.dataframe(mdf, use_container_width=True)
         else:
             st.warning("No close sequence matches found.")
 
-    tabs[4].dataframe(netmhc_demo(),use_container_width=True)
+    tabs[4].dataframe(netmhc_demo(), use_container_width=True)
     tabs[4].caption("Lower Affinity & Rank% = stronger HLA binding (demo).")
 
-    tabs[5].dataframe(gnn_demo(),use_container_width=True)
-    tabs[5].caption("Predicted pKd (demo). Higher = stronger drug binding.")
+    with tabs[5]:
+        st.subheader("🧠 GNN-Based Drug Binding Prediction")
+        with st.spinner("Predicting using DeepPurpose..."):
+            gdf = gnn_predict(fasta)
+        st.dataframe(gdf, use_container_width=True)
+        st.caption("Predicted pKd: Higher = stronger binding affinity")
 else:
     for t in tabs:
         with t:
