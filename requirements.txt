@@ -2,3 +2,5 @@ torch==1.13.1
 DeepPurpose==0.1.5
 pandas
 rdkit
+biopython
+streamlit
