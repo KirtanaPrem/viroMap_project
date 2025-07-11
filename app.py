@@ -35,24 +35,20 @@ Entrez.email = "your@email.com"   # CHANGE to your email
 
 # ------------- FASTA fetch (improved) -------------
 @lru_cache(maxsize=10)
+@lru_cache(maxsize=10)
 def fetch_fasta(strain_name):
-    """Return protein FASTA (spike / env) for a strain, else None."""
-    organism_query = f'"{strain_name}"[Organism]'
-    queries = [
-        f"{organism_query} AND spike[Title] AND biomol_peptide[PROP]",
-        f"{organism_query} AND envelope glycoprotein[Title] AND biomol_peptide[PROP]",
-        organism_query + " AND biomol_peptide[PROP]"
-    ]
-    for q in queries:
-        try:
-            search = Entrez.esearch(db="protein", term=q, retmax=1, sort="relevance")
-            rec = Entrez.read(search)
-            if rec["IdList"]:
-                pid = rec["IdList"][0]
-                return Entrez.efetch(db="protein", id=pid, rettype="fasta", retmode="text").read()
-        except Exception:
-            continue
-    return None  # nothing found
+    try:
+        query = f'"{strain_name}"[Organism] AND (spike OR envelope OR surface)[Title] AND biomol_mrna[PROP]'
+        handle = Entrez.esearch(db="nucleotide", term=query, retmax=1, sort="relevance")
+        record = Entrez.read(handle)
+        if not record["IdList"]:
+            return None
+        fid = record["IdList"][0]
+        fasta = Entrez.efetch(db="nucleotide", id=fid, rettype="fasta", retmode="text").read()
+        return fasta
+    except Exception as e:
+        return None
+
 
 # ------------- Codon bias -------------
 def calculate_codon_usage(fasta_text):
