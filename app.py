@@ -44,37 +44,48 @@ with tabs[3]:
     # Add your mimicry result table or upload option here
 
 # Tab 5 – GNN Predictions
-with tabs[4]:
+
+            with tabs[4]:
     st.header("🧠 Real GNN Predictions for COVID-19 Spike Protein")
 
     try:
         gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
 
-        # 🔍 Search bar
-        search_term = st.text_input("🔍 Search Drug", "")
+        st.write("Column names:", gnn_df.columns.tolist())  # TEMPORARY check
 
-        # Filter based on search term
+        # Update this based on your actual column name
+        score_column = "GNN_pKd"  # change if it's different in your CSV
+
+        # Search bar
+        search_term = st.text_input("🔍 Search Drug", "")
         filtered_df = gnn_df[gnn_df["Drug"].str.contains(search_term, case=False)]
 
-        # 🟢 Highlight scores by strength
-        def highlight_score(val):
-            color = 'green' if val > 7.2 else 'orange' if val > 6.9 else 'red'
-            return f'color: {color}'
+        if not filtered_df.empty:
+            # Color score based on strength
+            def highlight_score(val):
+                color = 'green' if val > 7.2 else 'orange' if val > 6.9 else 'red'
+                return f'color: {color}'
 
-        st.subheader("📋 Prediction Table")
-        st.dataframe(filtered_df.style.applymap(highlight_score, subset=["GNN_pKd"]), use_container_width=True)
+            st.subheader("📋 Prediction Table")
+            st.dataframe(filtered_df.style.applymap(highlight_score, subset=[score_column]), use_container_width=True)
 
-        # 📊 Bar Chart
-        st.subheader("📊 GNN-pKd Score Chart")
-        st.bar_chart(filtered_df.set_index("Drug")["GNN_pKd"])
+            # Bar chart
+            st.subheader("📊 Binding Score Chart")
+            st.bar_chart(filtered_df.set_index("Drug")[score_column])
 
-        # 📥 Download Button
-        st.download_button(
-            label="📥 Download GNN Prediction CSV",
-            data=filtered_df.to_csv(index=False),
-            file_name="real_gnn_predictions.csv",
-            mime="text/csv"
-        )
+            # Download
+            st.download_button(
+                label="📥 Download CSV",
+                data=filtered_df.to_csv(index=False),
+                file_name="real_gnn_predictions.csv",
+                mime="text/csv"
+            )
+        else:
+            st.warning("No drugs match your search.")
+
+    except FileNotFoundError:
+        st.error("real_gnn_predictions.csv not found in `/data/` folder.")
+
 
     except FileNotFoundError:
         st.error("Prediction file not found. Please upload `real_gnn_predictions.csv` to `/data/` folder in GitHub.")
