@@ -47,27 +47,35 @@ with tabs[3]:
 with tabs[4]:
     st.header("🧠 Real GNN Predictions for COVID-19 Spike Protein")
 
-    gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
+    try:
+        gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
 
-    # 🔍 Search
-    search_term = st.text_input("Search Drug", "")
-    filtered_df = gnn_df[gnn_df["Drug"].str.contains(search_term, case=False)]
+        # 🔍 Search bar
+        search_term = st.text_input("🔍 Search Drug", "")
 
-    # 🟢 Highlighted Scores
-    def highlight_score(val):
-        color = 'green' if val > 7.2 else 'orange' if val > 6.9 else 'red'
-        return f'color: {color}'
+        # Filter based on search term
+        filtered_df = gnn_df[gnn_df["Drug"].str.contains(search_term, case=False)]
 
-    st.dataframe(filtered_df.style.applymap(highlight_score, subset=["GNN_pKd"]))
+        # 🟢 Highlight scores by strength
+        def highlight_score(val):
+            color = 'green' if val > 7.2 else 'orange' if val > 6.9 else 'red'
+            return f'color: {color}'
 
-    # 📊 Bar Chart
-    st.subheader("📊 Binding Affinity (GNN-pKd)")
-    st.bar_chart(filtered_df.set_index("Drug")["GNN_pKd"])
+        st.subheader("📋 Prediction Table")
+        st.dataframe(filtered_df.style.applymap(highlight_score, subset=["GNN_pKd"]), use_container_width=True)
 
-    # 📥 Download
-    st.download_button(
-        label="Download CSV",
-        data=filtered_df.to_csv(index=False),
-        file_name="real_gnn_predictions.csv",
-        mime="text/csv"
-    )
+        # 📊 Bar Chart
+        st.subheader("📊 GNN-pKd Score Chart")
+        st.bar_chart(filtered_df.set_index("Drug")["GNN_pKd"])
+
+        # 📥 Download Button
+        st.download_button(
+            label="📥 Download GNN Prediction CSV",
+            data=filtered_df.to_csv(index=False),
+            file_name="real_gnn_predictions.csv",
+            mime="text/csv"
+        )
+
+    except FileNotFoundError:
+        st.error("Prediction file not found. Please upload `real_gnn_predictions.csv` to `/data/` folder in GitHub.")
+
