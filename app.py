@@ -1,12 +1,15 @@
+# ViroMap – Streamlit Bioinformatics App
+# Final polished version
+
 import streamlit as st
 import pandas as pd
 import requests
 from io import StringIO
-from Bio import Entrez
+from Bio import Entrez  # ✅ ensure biopython is in requirements.txt
 
-# --------------------------------------------------
-#  Page & Theme
-# --------------------------------------------------
+# -----------------------
+# Page Config & Theme
+# -----------------------
 st.set_page_config(page_title="ViroMap", layout="wide")
 
 st.markdown("""
@@ -24,14 +27,23 @@ h1, h2 {color:#AA336A;}
 </style>
 """, unsafe_allow_html=True)
 
-# --------------------------------------------------
-#  Header
-# --------------------------------------------------
+# -----------------------
+# Header
+# -----------------------
 st.markdown("<h1 style='text-align:center'>🧬 ViroMap – Integrated Viral Bioinformatics Portal</h1>", unsafe_allow_html=True)
 
-# --------------------------------------------------
-#  Tabs
-# --------------------------------------------------
+# -----------------------
+# Data Files Map
+# -----------------------
+file_map = {
+    "🧬 Codon Bias": "data/sars-cov-2_codon_bias.csv",
+    "💧 LLPS":       "data/sars-cov-2_llps.csv",
+    "🧫 Mimicry":    "data/sars-cov-2_mimicry.csv"
+}
+
+# -----------------------
+# Tabs
+# -----------------------
 tabs = st.tabs([
     "🏠 Overview",
     "🧬 Codon Bias",
@@ -42,39 +54,28 @@ tabs = st.tabs([
     "🔍 Fetch Spike FASTA"
 ])
 
-# --------------------------------------------------
-#  Static CSV paths (mock demo)
-# --------------------------------------------------
-file_map = {
-    "🧬 Codon Bias": "data/sars-cov-2_codon_bias.csv",
-    "💧 LLPS":       "data/sars-cov-2_llps.csv",
-    "🧫 Mimicry":    "data/sars-cov-2_mimicry.csv"
-}
-
-# --------------------------------------------------
-#  Tab 1 – Overview
-# --------------------------------------------------
+# -----------------------
+# Tab 1 – Overview
+# -----------------------
 with tabs[0]:
     st.subheader("🏠 Overview")
     st.markdown("""
-**ViroMap** integrates multiple bioinformatics layers for viral research:
+**ViroMap** integrates multi-layered viral bioinformatics:
 
 | Layer | Description |
 |-------|-------------|
-| Codon Bias | Viral adaptation to host codons |
-| LLPS | Phase‑separation regions in proteins |
-| Mimicry | Viral peptides mimicking human proteins |
-| GNN Predictions | AI‑predicted drug binding to spike protein |
-| Fetch FASTA | Pull spike sequences directly from NCBI |
-
-Use the tabs above to explore, filter, and download datasets.
+| Codon Bias | Viral adaptation to host |
+| LLPS | Protein phase separation prediction |
+| Mimicry | Viral–host mimicry |
+| GNN | Drug prediction for spike |
+| Fetch FASTA | Download spike sequence by strain name |
 """)
 
-# --------------------------------------------------
-#  Tab 2 – Codon Bias
-# --------------------------------------------------
+# -----------------------
+# Tab 2 – Codon Bias
+# -----------------------
 with tabs[1]:
-    st.subheader("🧬 Codon Bias")
+    st.subheader("🧬 Codon Bias Analysis")
     df = pd.read_csv(file_map["🧬 Codon Bias"])
     query = st.text_input("🔍 Search Codon Bias", key="codon")
     if query.strip():
@@ -82,9 +83,9 @@ with tabs[1]:
     st.dataframe(df, use_container_width=True)
     st.download_button("📥 Download CSV", df.to_csv(index=False), "codon_bias.csv")
 
-# --------------------------------------------------
-#  Tab 3 – LLPS
-# --------------------------------------------------
+# -----------------------
+# Tab 3 – LLPS
+# -----------------------
 with tabs[2]:
     st.subheader("💧 LLPS Prediction")
     df = pd.read_csv(file_map["💧 LLPS"])
@@ -94,11 +95,11 @@ with tabs[2]:
     st.dataframe(df, use_container_width=True)
     st.download_button("📥 Download CSV", df.to_csv(index=False), "llps.csv")
 
-# --------------------------------------------------
-#  Tab 4 – Mimicry
-# --------------------------------------------------
+# -----------------------
+# Tab 4 – Molecular Mimicry
+# -----------------------
 with tabs[3]:
-    st.subheader("🧫 Molecular Mimicry")
+    st.subheader("🧫 Mimicry Predictions")
     df = pd.read_csv(file_map["🧫 Mimicry"])
     query = st.text_input("🔍 Search Mimicry", key="mimicry")
     if query.strip():
@@ -106,11 +107,11 @@ with tabs[3]:
     st.dataframe(df, use_container_width=True)
     st.download_button("📥 Download CSV", df.to_csv(index=False), "mimicry.csv")
 
-# --------------------------------------------------
-#  Tab 5 – GNN Predictions
-# --------------------------------------------------
+# -----------------------
+# Tab 5 – GNN Predictions
+# -----------------------
 with tabs[4]:
-    st.subheader("🧠 Real GNN Predictions (Spike Protein)")
+    st.subheader("🧠 GNN Drug Predictions for Spike")
     try:
         gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
         gnn_df["GNN_pKd"] = pd.to_numeric(gnn_df["GNN_pKd"], errors="coerce")
@@ -126,23 +127,21 @@ with tabs[4]:
             st.dataframe(filtered.style.applymap(highlight, subset=["GNN_pKd"]), use_container_width=True)
 
             if len(filtered) > 1:
-                st.subheader("📊 Binding Affinity (pKd)")
+                st.subheader("📊 Binding Affinity")
                 st.bar_chart(filtered.set_index("Drug")["GNN_pKd"])
 
-            st.download_button("📥 Download Filtered CSV",
-                               filtered.to_csv(index=False),
-                               "filtered_gnn_predictions.csv")
+            st.download_button("📥 Download Filtered", filtered.to_csv(index=False), "filtered_gnn.csv")
         else:
-            st.warning("No matching drugs.")
+            st.warning("No matches.")
     except FileNotFoundError:
-        st.error("`real_gnn_predictions.csv` missing in /data/.")
+        st.error("`real_gnn_predictions.csv` not found in /data/.")
 
-# --------------------------------------------------
-#  Tab 6 – Upload / Explore
-# --------------------------------------------------
+# -----------------------
+# Tab 6 – Upload & Explore
+# -----------------------
 with tabs[5]:
-    st.subheader("📤 Upload & Explore")
-    up = st.file_uploader("Upload a CSV", type="csv")
+    st.subheader("📤 Upload and Explore Custom CSV")
+    up = st.file_uploader("Upload CSV", type="csv")
     if up:
         df = pd.read_csv(up)
         q = st.text_input("🔍 Search Upload", key="upload")
@@ -153,10 +152,10 @@ with tabs[5]:
     else:
         st.info("Upload a CSV to explore.")
 
-# --------------------------------------------------
-#  Tab 7 – Fetch Spike FASTA via NCBI
-# --------------------------------------------------
-Entrez.email = "your-email@example.com"  # <- replace with your email (NCBI requirement)
+# -----------------------
+# Tab 7 – Fetch Spike FASTA
+# -----------------------
+Entrez.email = "your-email@example.com"  # <-- Replace with your actual email
 
 def fetch_spike_fasta(strain):
     try:
@@ -172,7 +171,7 @@ def fetch_spike_fasta(strain):
 
 with tabs[6]:
     st.subheader("🔍 Fetch Spike FASTA from NCBI")
-    strain_input = st.text_input("Enter strain (e.g., SARS-CoV-2 Wuhan, Omicron):")
+    strain_input = st.text_input("Enter strain name (e.g., SARS-CoV-2 Wuhan):")
     if strain_input:
         fasta_data, err = fetch_spike_fasta(strain_input)
         if err:
