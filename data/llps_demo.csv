@@ -1,0 +1,4 @@
+Protein Region,LLPS Score,Prediction
+Spike_1-50,0.65,Likely
+Spike_51-100,0.8,Highly Likely
+Spike_101-150,0.55,Moderate
