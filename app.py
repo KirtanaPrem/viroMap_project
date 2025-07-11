@@ -1,9 +1,11 @@
 import streamlit as st
 import pandas as pd
+import requests, time
 from collections import Counter
 from functools import lru_cache
 from Bio import Entrez
 import math
+import xml.etree.ElementTree as ET
 
 # ============  Page Config and Theme  ============
 st.set_page_config(page_title="ViroMap Unified", layout="wide")
@@ -33,7 +35,7 @@ st.markdown("<h1 style='text-align:center'>🧬 ViroMap – Unified Viral Dashbo
 strain = st.text_input("🔍  Type virus / strain (e.g. SARS‑CoV‑2 Omicron):").strip()
 
 # ============  NCBI Setup ============
-Entrez.email = "your-email@example.com"  # Replace with your email
+Entrez.email = "your-email@example.com"  # Replace with your real email
 
 # ============  Fetch FASTA ============
 @lru_cache(maxsize=10)
@@ -84,54 +86,106 @@ def predict_llps_simple(fasta_seq):
     df["Region"] = pd.cut(df["LLPS_Score"], bins=[-math.inf, 0, 2, math.inf], labels=["Low", "Medium", "High"])
     return df
 
-# ============  Placeholder for Other Tabs ============
-def get_demo_data(name):
-    try:
-        return pd.read_csv(f"data/{name}_demo.csv")
-    except FileNotFoundError:
-        return pd.DataFrame()
+# ============  BLAST Mimicry ============
+def run_mimicry_blast(spike_fasta):
+    base_url = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
+
+    payload = {
+        "CMD": "Put",
+        "PROGRAM": "blastp",
+        "DATABASE": "refseq_protein",
+        "QUERY": spike_fasta,
+        "ENTREZ_QUERY": "txid9606[Organism]",
+        "FORMAT_TYPE": "XML"
+    }
+
+    r = requests.post(base_url, data=payload)
+    if r.status_code != 200: return None
+
+    lines = r.text.splitlines()
+    rid = next((line.split("=")[1] for line in lines if line.startswith("RID")), None)
+    if not rid:
+        return None
+
+    for _ in range(10):
+        time.sleep(5)
+        check = requests.get(base_url, params={"CMD": "Get", "RID": rid})
+        if "Status=READY" in check.text:
+            break
+
+    result = requests.get(base_url, params={"CMD": "Get", "RID": rid, "FORMAT_TYPE": "XML"})
+    tree = ET.fromstring(result.content)
+
+    hits = []
+    for hit in tree.findall(".//Hit"):
+        hit_id = hit.findtext("Hit_def")
+        acc = hit.findtext("Hit_accession")
+        length = hit.findtext("Hit_len")
+        hsps = hit.findall("Hit_hsps/Hsp")
+        if hsps:
+            hsp = hsps[0]
+            identity = hsp.findtext("Hsp_identity")
+            align_len = hsp.findtext("Hsp_align-len")
+            evalue = hsp.findtext("Hsp_evalue")
+            hits.append({
+                "Protein": hit_id,
+                "Accession": acc,
+                "Length": length,
+                "Identity": identity,
+                "Align_Len": align_len,
+                "E-Value": evalue
+            })
+
+    return pd.DataFrame(hits[:10])
 
 # ============  Tabs Setup ============
-tab_names = ["📄 FASTA Sequence", "🧬 Codon Bias", "💧 LLPS", "🧫 Mimicry", "🧠 GNN Predictions"]
+tab_names = ["📄 FASTA", "🧬 Codon Bias", "💧 LLPS", "🧫 Mimicry", "🧠 GNN"]
 tabs = st.tabs(tab_names)
 
 # ============  Main Logic ============
 if strain:
     fasta = fetch_fasta(strain)
     if fasta:
-        # --- FASTA Tab ---
+        # --- Tab 1: FASTA ---
         with tabs[0]:
             st.subheader("📄 Spike Protein FASTA")
             st.code(fasta, language="fasta")
 
-        # --- Codon Bias Tab ---
+        # --- Tab 2: Codon Bias ---
         with tabs[1]:
-            st.subheader("🧬 Real‑time Codon Usage")
+            st.subheader("🧬 Codon Usage Analysis")
             codon_df = calculate_codon_usage(fasta)
             st.dataframe(codon_df, use_container_width=True)
 
-        # --- LLPS Prediction Tab ---
+        # --- Tab 3: LLPS Prediction ---
         with tabs[2]:
-            st.subheader("💧 LLPS Prediction")
+            st.subheader("💧 LLPS Propensity")
             llps_df = predict_llps_simple(fasta)
             st.dataframe(llps_df, use_container_width=True)
 
-        # --- Mimicry Tab (demo for now) ---
+        # --- Tab 4: Mimicry via BLAST ---
         with tabs[3]:
-            st.subheader("🧫 Mimicry Prediction (demo)")
-            mim_df = get_demo_data("mimicry")
-            st.dataframe(mim_df, use_container_width=True)
+            st.subheader("🧫 Mimicry Prediction (Spike vs Human)")
 
-        # --- GNN Tab (demo for now) ---
+            with st.spinner("Running BLAST... this takes ~30s ⏳"):
+                mim_df = run_mimicry_blast(fasta)
+
+            if mim_df is not None and not mim_df.empty:
+                st.success("BLAST complete! Top human mimics:")
+                st.dataframe(mim_df, use_container_width=True)
+            else:
+                st.error("BLAST failed or no hits found.")
+
+        # --- Tab 5: GNN Placeholder ---
         with tabs[4]:
-            st.subheader("🧠 GNN Drug Prediction (demo)")
-            gnn_df = get_demo_data("gnn")
-            st.dataframe(gnn_df, use_container_width=True)
+            st.subheader("🧠 GNN Drug Prediction")
+            st.warning("GNN prediction coming next...")
+
     else:
         for t in tabs:
             with t:
-                st.error("❌ Could not fetch spike for that strain. Try another.")
+                st.error("❌ Could not fetch spike protein. Try a different virus or strain.")
 else:
     for t in tabs:
         with t:
-            st.info("🧠 Enter a virus/strain name above to load data.")
+            st.info("ℹ️ Enter a virus or strain above to get started.")
