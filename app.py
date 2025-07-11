@@ -1,85 +1,78 @@
 import streamlit as st
 import pandas as pd
+import requests
+from io import StringIO
+from Bio import Entrez
 
-# --------------------------------------
-# Page Setup
-# --------------------------------------
+# --------------------------------------------------
+#  Page & Theme
+# --------------------------------------------------
 st.set_page_config(page_title="ViroMap", layout="wide")
 
-# --------------------------------------
-# Custom CSS – white bg + unified theme
-# --------------------------------------
 st.markdown("""
 <style>
-body {
-    background-color: white;
+body {background:white;}
+h1, h2 {color:#AA336A;}
+.stTabs [data-baseweb="tab"]{
+    background:#f8f8f8;border:2px solid #ccc;
+    border-radius:8px;padding:10px 15px;margin-right:6px;
+    font-weight:600;color:#444;
 }
-h1, h2 {
-    color: #AA336A;
-}
-.stTabs [data-baseweb="tab"] {
-    background-color: #f8f8f8;
-    border: 2px solid #ccc;
-    border-radius: 8px;
-    padding: 10px 16px;
-    margin-right: 6px;
-    font-weight: 600;
-    color: #444;
-}
-.stTabs [aria-selected="true"] {
-    background-color: #AA336A !important;
-    color: white !important;
+.stTabs [aria-selected="true"]{
+    background:#AA336A !important;color:white !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# --------------------------------------
-# App Header
-# --------------------------------------
-st.markdown("<h1 style='text-align: center;'>🧬 ViroMap – Integrated Viral Bioinformatics Portal</h1>", unsafe_allow_html=True)
+# --------------------------------------------------
+#  Header
+# --------------------------------------------------
+st.markdown("<h1 style='text-align:center'>🧬 ViroMap – Integrated Viral Bioinformatics Portal</h1>", unsafe_allow_html=True)
 
-# --------------------------------------
-# Tabs
-# --------------------------------------
+# --------------------------------------------------
+#  Tabs
+# --------------------------------------------------
 tabs = st.tabs([
     "🏠 Overview",
     "🧬 Codon Bias",
     "💧 LLPS",
     "🧫 Mimicry",
     "🧠 GNN Predictions",
-    "📤 Upload & Explore"
+    "📤 Upload & Explore",
+    "🔍 Fetch Spike FASTA"
 ])
 
-# --------------------------------------
-# File Map (static datasets)
-# --------------------------------------
+# --------------------------------------------------
+#  Static CSV paths (mock demo)
+# --------------------------------------------------
 file_map = {
-    "🧬 Codon Bias":      "data/sars-cov-2_codon_bias.csv",
-    "💧 LLPS":            "data/sars-cov-2_llps.csv",
-    "🧫 Mimicry":         "data/sars-cov-2_mimicry.csv"
+    "🧬 Codon Bias": "data/sars-cov-2_codon_bias.csv",
+    "💧 LLPS":       "data/sars-cov-2_llps.csv",
+    "🧫 Mimicry":    "data/sars-cov-2_mimicry.csv"
 }
 
-# --------------------------------------
-# Tab 1 – Overview
-# --------------------------------------
+# --------------------------------------------------
+#  Tab 1 – Overview
+# --------------------------------------------------
 with tabs[0]:
     st.subheader("🏠 Overview")
     st.markdown("""
-Welcome to **ViroMap**, a bioinformatics tool for COVID‑19 and viral research.
-It combines data layers into one platform:
+**ViroMap** integrates multiple bioinformatics layers for viral research:
 
-- 🧬 **Codon Bias** – Viral adaptation to host codons  
-- 💧 **LLPS** – Intrinsically disordered regions & phase separation  
-- 🧫 **Mimicry** – Viral peptides mimicking human proteins  
-- 🧠 **GNN Predictions** – AI-predicted drug binding to spike protein  
-- 📤 **Upload** – Bring your own CSV and explore
+| Layer | Description |
+|-------|-------------|
+| Codon Bias | Viral adaptation to host codons |
+| LLPS | Phase‑separation regions in proteins |
+| Mimicry | Viral peptides mimicking human proteins |
+| GNN Predictions | AI‑predicted drug binding to spike protein |
+| Fetch FASTA | Pull spike sequences directly from NCBI |
 
-Use the tabs to explore and download datasets.
+Use the tabs above to explore, filter, and download datasets.
 """)
 
-# --------------------------------------
-# Tab 2 – Codon Bias
-# --------------------------------------
+# --------------------------------------------------
+#  Tab 2 – Codon Bias
+# --------------------------------------------------
 with tabs[1]:
     st.subheader("🧬 Codon Bias")
     df = pd.read_csv(file_map["🧬 Codon Bias"])
@@ -89,9 +82,9 @@ with tabs[1]:
     st.dataframe(df, use_container_width=True)
     st.download_button("📥 Download CSV", df.to_csv(index=False), "codon_bias.csv")
 
-# --------------------------------------
-# Tab 3 – LLPS
-# --------------------------------------
+# --------------------------------------------------
+#  Tab 3 – LLPS
+# --------------------------------------------------
 with tabs[2]:
     st.subheader("💧 LLPS Prediction")
     df = pd.read_csv(file_map["💧 LLPS"])
@@ -101,9 +94,9 @@ with tabs[2]:
     st.dataframe(df, use_container_width=True)
     st.download_button("📥 Download CSV", df.to_csv(index=False), "llps.csv")
 
-# --------------------------------------
-# Tab 4 – Mimicry
-# --------------------------------------
+# --------------------------------------------------
+#  Tab 4 – Mimicry
+# --------------------------------------------------
 with tabs[3]:
     st.subheader("🧫 Molecular Mimicry")
     df = pd.read_csv(file_map["🧫 Mimicry"])
@@ -113,59 +106,79 @@ with tabs[3]:
     st.dataframe(df, use_container_width=True)
     st.download_button("📥 Download CSV", df.to_csv(index=False), "mimicry.csv")
 
-# --------------------------------------
-# Tab 5 – GNN Predictions
-# --------------------------------------
+# --------------------------------------------------
+#  Tab 5 – GNN Predictions
+# --------------------------------------------------
 with tabs[4]:
-    st.subheader("🧠 Real GNN Predictions (COVID Spike Protein)")
-
+    st.subheader("🧠 Real GNN Predictions (Spike Protein)")
     try:
         gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
         gnn_df["GNN_pKd"] = pd.to_numeric(gnn_df["GNN_pKd"], errors="coerce")
-        search = st.text_input("🔍 Search Drug", key="gnn")
-        if search.strip():
-            filtered = gnn_df[gnn_df["Drug"].str.contains(search, case=False)]
-        else:
-            filtered = gnn_df.copy()
-        filtered = filtered.dropna(subset=["GNN_pKd"])
 
+        search = st.text_input("🔍 Search Drug", key="gnn")
+        filtered = gnn_df[gnn_df["Drug"].str.contains(search, case=False)] if search.strip() else gnn_df
+
+        filtered = filtered.dropna(subset=["GNN_pKd"])
         if not filtered.empty:
-            def highlight(val):
-                if pd.isna(val): return ""
-                color = "green" if val > 7.2 else "orange" if val > 6.9 else "red"
-                return f"color:{color}"
+            def highlight(v):
+                if pd.isna(v): return ""
+                return f"color:{'green' if v>7.2 else 'orange' if v>6.9 else 'red'}"
             st.dataframe(filtered.style.applymap(highlight, subset=["GNN_pKd"]), use_container_width=True)
 
             if len(filtered) > 1:
-                st.subheader("📊 GNN Binding Scores")
+                st.subheader("📊 Binding Affinity (pKd)")
                 st.bar_chart(filtered.set_index("Drug")["GNN_pKd"])
-            else:
-                st.info("ℹ️ Not enough entries to show chart.")
 
-            st.download_button(
-                "📥 Download Filtered GNN CSV",
-                filtered.to_csv(index=False),
-                file_name="filtered_gnn_predictions.csv",
-                mime="text/csv"
-            )
+            st.download_button("📥 Download Filtered CSV",
+                               filtered.to_csv(index=False),
+                               "filtered_gnn_predictions.csv")
         else:
-            st.warning("No matching drugs found.")
+            st.warning("No matching drugs.")
     except FileNotFoundError:
-        st.error("❌ `real_gnn_predictions.csv` not found in `/data/` folder.")
+        st.error("`real_gnn_predictions.csv` missing in /data/.")
 
-# --------------------------------------
-# Tab 6 – Upload CSV
-# --------------------------------------
+# --------------------------------------------------
+#  Tab 6 – Upload / Explore
+# --------------------------------------------------
 with tabs[5]:
-    st.subheader("📤 Upload & Explore Your Data")
-    file_up = st.file_uploader("Upload a CSV", type="csv")
-    if file_up:
-        df = pd.read_csv(file_up)
-        st.success("File uploaded successfully!")
-        query = st.text_input("🔍 Search Uploaded Data", key="upload")
-        if query.strip():
-            df = df[df.apply(lambda r: r.astype(str).str.contains(query, case=False).any(), axis=1)]
+    st.subheader("📤 Upload & Explore")
+    up = st.file_uploader("Upload a CSV", type="csv")
+    if up:
+        df = pd.read_csv(up)
+        q = st.text_input("🔍 Search Upload", key="upload")
+        if q.strip():
+            df = df[df.apply(lambda r: r.astype(str).str.contains(q, case=False).any(), axis=1)]
         st.dataframe(df, use_container_width=True)
-        st.download_button("📥 Download Filtered CSV", df.to_csv(index=False), "uploaded_filtered.csv")
+        st.download_button("📥 Download Filtered", df.to_csv(index=False), "upload_filtered.csv")
     else:
-        st.info("Upload a CSV file to explore it here.")
+        st.info("Upload a CSV to explore.")
+
+# --------------------------------------------------
+#  Tab 7 – Fetch Spike FASTA via NCBI
+# --------------------------------------------------
+Entrez.email = "your-email@example.com"  # <- replace with your email (NCBI requirement)
+
+def fetch_spike_fasta(strain):
+    try:
+        handle = Entrez.esearch(db="nucleotide", term=f"{strain} AND spike", retmax=1)
+        record = Entrez.read(handle)
+        if not record["IdList"]:
+            return None, "No sequence found."
+        seq_id = record["IdList"][0]
+        fasta = Entrez.efetch(db="nucleotide", id=seq_id, rettype="fasta", retmode="text").read()
+        return fasta, None
+    except Exception as e:
+        return None, str(e)
+
+with tabs[6]:
+    st.subheader("🔍 Fetch Spike FASTA from NCBI")
+    strain_input = st.text_input("Enter strain (e.g., SARS-CoV-2 Wuhan, Omicron):")
+    if strain_input:
+        fasta_data, err = fetch_spike_fasta(strain_input)
+        if err:
+            st.error(err)
+        else:
+            st.code(fasta_data, language="fasta")
+            st.download_button("📥 Download FASTA",
+                               fasta_data,
+                               f"{strain_input.replace(' ','_')}_spike.fasta")
