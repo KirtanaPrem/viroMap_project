@@ -3,6 +3,5 @@ pandas
 biopython
 torch==1.13.1
 DeepPurpose==0.1.5
-scikit-learn
 numpy
-rdkit-pypi
+scikit-learn
