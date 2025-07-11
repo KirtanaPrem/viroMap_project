@@ -118,44 +118,55 @@ with tabs[3]:
 # --------------------------------------------------
 #  TAB 5 – REAL GNN Predictions
 # --------------------------------------------------
-with tabs[4]:
+
+                with tabs[4]:
     st.subheader("🧠 Real GNN Predictions (Spike Protein)")
 
     try:
         gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
 
-        # ---- Search ----
-        query = st.text_input("🔍 Search drug name", key="gnn")
-        if query.strip():
-            gnn_df = gnn_df[gnn_df["Drug"].str.contains(query, case=False)]
+        # Ensure GNN_pKd is numeric
+        gnn_df["GNN_pKd"] = pd.to_numeric(gnn_df["GNN_pKd"], errors='coerce')
 
-        if not gnn_df.empty:
-            # ---- Color scores ----
-            def color_score(v):
-                col = 'green' if v > 7.2 else 'orange' if v > 6.9 else 'red'
-                return f'color:{col}'
+        # Search
+        search_term = st.text_input("🔍 Search Drug", key="gnn")
+        if search_term.strip():
+            gnn_filtered = gnn_df[gnn_df["Drug"].str.contains(search_term, case=False)]
+        else:
+            gnn_filtered = gnn_df.copy()
+
+        # Drop rows with NaN scores
+        gnn_filtered = gnn_filtered.dropna(subset=["GNN_pKd"])
+
+        if not gnn_filtered.empty:
+            # Table with color
+            def color_score(val):
+                if pd.isna(val): return ""
+                color = "green" if val > 7.2 else "orange" if val > 6.9 else "red"
+                return f"color: {color}"
             st.dataframe(
-                gnn_df.style.applymap(color_score, subset=["GNN_pKd"]),
+                gnn_filtered.style.applymap(color_score, subset=["GNN_pKd"]),
                 use_container_width=True
             )
 
-            # ---- Bar chart (only if ≥1 row) ----
-            if len(gnn_df) > 0:
-                st.subheader("📊 Binding affinity (pKd)")
-                st.bar_chart(gnn_df.set_index("Drug")["GNN_pKd"])
+            # Bar chart (only if at least 1 row)
+            if len(gnn_filtered) >= 1:
+                st.subheader("📊 Binding Affinity (pKd)")
+                st.bar_chart(gnn_filtered.set_index("Drug")["GNN_pKd"])
+            else:
+                st.info("Not enough rows to display chart.")
 
-            # ---- Download ----
+            # Download button
             st.download_button(
-                "📥 Download filtered CSV",
-                data=gnn_df.to_csv(index=False),
-                file_name="gnn_predictions_filtered.csv",
+                "📥 Download Filtered CSV",
+                gnn_filtered.to_csv(index=False),
+                file_name="filtered_gnn_predictions.csv",
                 mime="text/csv"
             )
         else:
-            st.warning("No drugs match your search.")
-
+            st.warning("No matching drug results.")
     except FileNotFoundError:
-        st.error("`real_gnn_predictions.csv` not found in `/data/` folder.")
+        st.error("File `real_gnn_predictions.csv` not found in `/data/` folder.")
 
 # --------------------------------------------------
 #  TAB 6 – Upload & Explore
