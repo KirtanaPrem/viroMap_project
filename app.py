@@ -1,91 +1,65 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(
-    page_title="ViroMap",
-    page_icon="🧬",
-    layout="wide"
-)
+st.set_page_config(page_title="ViroMap", layout="wide")
 
-st.markdown("""
-    <style>
-        .main { background-color: #f9f9f9; }
-        h1, h2, h3 {
-            color: #FF5C8D;
-        }
-        .stTabs [data-baseweb="tab"] {
-            background-color: #ffe6f0;
-            border-radius: 8px;
-            padding: 10px;
-            margin-right: 5px;
-            color: black;
-            font-weight: bold;
-        }
-        .stTabs [aria-selected="true"] {
-            background-color: #FF5C8D !important;
-            color: white !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-st.markdown("<h1 style='text-align: center;'>🧬 ViroMap: Virus Feature Integration Platform</h1>", unsafe_allow_html=True)
-
-# Create colorful tabs
+# Tab setup
 tabs = st.tabs([
-    "📁 Codon Bias", 
-    "💧 LLPS", 
-    "🔬 Molecular Mimicry", 
-    "💊 Drug Predictions", 
-    "🧠 GNN Predictions", 
-    "📤 Upload & Explore"
+    "🏠 Overview",
+    "🧬 Codon Bias",
+    "💧 LLPS Prediction",
+    "🧫 Molecular Mimicry",
+    "🧠 GNN Predictions"
 ])
 
-# Load CSV files
-file_map = {
-    "📁 Codon Bias": "data/sars-cov-2_codon_bias.csv",
-    "💧 LLPS": "data/sars-cov-2_llps.csv",
-    "🔬 Molecular Mimicry": "data/sars-cov-2_mimicry.csv",
-    "💊 Drug Predictions": "data/sars-cov-2_drug_predictions.csv"
-}
-
-# Tabs 1–4: Display Datasets
-for i, tab in enumerate(tabs[:4]):
-    dataset_name = list(file_map.keys())[i]
-    with tab:
-        st.header(dataset_name)
-        df = pd.read_csv(file_map[dataset_name])
-        
-        search = st.text_input(f"🔍 Search in {dataset_name}", key=i)
-        if search:
-            df = df[df.apply(lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1)]
-
-        st.dataframe(df, use_container_width=True)
-        st.download_button(f"📥 Download {dataset_name}", df.to_csv(index=False), f"{dataset_name}.csv")
-
-# Tab 5: GNN Predictions
-with tabs[4]:
-    st.header("🧠 GNN Predictions")
-    st.info("This is a simulated output from a Graph Neural Network. Actual model integration is in progress.")
+# Tab 1 – Overview
+with tabs[0]:
+    st.title("ViroMap – A Unified Bioinformatics Platform for Viral Drug Discovery")
+    st.markdown("""
+    Welcome to **ViroMap**, an integrative AI + Bioinformatics dashboard for COVID-19 research.
     
-    gnn_data = pd.DataFrame({
-        "Drug": ["Remdesivir", "Favipiravir", "Molnupiravir"],
-        "Predicted Target": ["NSP12", "RdRp", "Spike"],
-        "GNN Confidence Score": [0.92, 0.88, 0.91]
-    })
-    st.dataframe(gnn_data, use_container_width=True)
-    st.download_button("📥 Download GNN Output", gnn_data.to_csv(index=False), "gnn_predictions.csv")
+    Navigate the tabs to explore:
+    - Codon usage patterns
+    - LLPS-prone regions in viral proteins
+    - Molecular mimicry with host proteins
+    - Real Graph Neural Network (GNN) drug-binding predictions
+    """)
 
-# Tab 6: Upload & Explore
-with tabs[5]:
-    st.header("📤 Upload Your Own CSV")
-    uploaded = st.file_uploader("Upload a CSV to explore", type="csv")
-    if uploaded:
-        user_df = pd.read_csv(uploaded)
-        st.success("File uploaded successfully!")
-        user_search = st.text_input("🔍 Search in uploaded file")
-        if user_search:
-            user_df = user_df[user_df.apply(lambda row: row.astype(str).str.contains(user_search, case=False).any(), axis=1)]
-        st.dataframe(user_df, use_container_width=True)
-        st.download_button("📥 Download Filtered Results", user_df.to_csv(index=False), "filtered_upload.csv")
-    else:
-        st.warning("No file uploaded yet.")
+# Tab 2 – Codon Bias
+with tabs[1]:
+    st.header("🧬 Codon Bias Analysis")
+    st.info("Upload viral gene sequences to analyze codon usage and host adaptation.")
+    # Add your codon bias upload/input logic here
+
+# Tab 3 – LLPS Prediction
+with tabs[2]:
+    st.header("💧 LLPS (Liquid-Liquid Phase Separation) Analysis")
+    st.info("Explore LLPS-prone regions of the spike protein using prediction tools.")
+    # Add your LLPS visual/chart code here
+
+# Tab 4 – Molecular Mimicry
+with tabs[3]:
+    st.header("🧫 Molecular Mimicry Detection")
+    st.info("Compare viral and human proteins to detect molecular mimicry.")
+    # Add your mimicry result table or upload option here
+
+# Tab 5 – GNN Predictions
+with tabs[4]:
+    st.header("🧠 Real GNN Predictions for COVID-19 Spike Protein")
+
+    # Load predictions CSV you uploaded into /data/
+    try:
+        gnn_df = pd.read_csv("data/real_gnn_predictions.csv")
+        st.dataframe(gnn_df, use_container_width=True)
+
+        st.subheader("📊 GNN-pKd Score Visualization")
+        st.bar_chart(gnn_df.set_index("Drug")["GNN_pKd"])
+
+        st.download_button(
+            label="📥 Download Predictions CSV",
+            data=gnn_df.to_csv(index=False),
+            file_name="real_gnn_predictions.csv",
+            mime="text/csv"
+        )
+    except FileNotFoundError:
+        st.error("real_gnn_predictions.csv not found. Please upload it to the /data/ folder in GitHub.")
