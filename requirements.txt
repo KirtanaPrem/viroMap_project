@@ -1,4 +1,6 @@
 streamlit
 pandas
 biopython
-requests
+numpy
+scikit-learn        # if you need stats later
+
