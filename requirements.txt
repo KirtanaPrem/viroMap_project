@@ -2,5 +2,4 @@ streamlit
 pandas
 biopython
 numpy
-scikit-learn        # if you need stats later
-
+scikit-learn
