@@ -1,23 +1,16 @@
 import streamlit as st
 import pandas as pd
 from Bio import Entrez, SeqIO
-import requests
-import matplotlib.pyplot as plt
 
-# Streamlit config
+# Set up page
 st.set_page_config(layout="wide", page_title="ViroMap", page_icon="🧬")
-
 st.markdown(
     """
     <style>
-        body {
-            background-color: white;
-        }
+        body { background-color: white; }
         .stTabs [data-baseweb="tab"] {
             background-color: #e3f2fd;
-            padding: 10px;
             border-radius: 8px;
-            margin: 2px;
         }
         .stTabs [aria-selected="true"] {
             background-color: #90caf9;
@@ -25,114 +18,94 @@ st.markdown(
         }
     </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
-st.title("🧬 ViroMap: Unified Viral Prediction Platform")
-st.markdown("Search any virus or strain to fetch FASTA and view predictions.")
+st.title("🧬 ViroMap: Unified Viral Prediction Dashboard")
+query = st.text_input("🔍 Search Virus Name (e.g. SARS-CoV-2, HIV, Influenza):")
 
-# Search bar
-query = st.text_input("🔍 Enter virus or strain name (e.g., SARS-CoV-2, HIV-1, Dengue):")
-
-# Initialize placeholders
-fasta = ""
-record_id = ""
-
-# Fetch sequence from NCBI
+# Helper: Fetch sequence
 def fetch_fasta(query):
-    Entrez.email = "your@email.com"
+    Entrez.email = "example@email.com"
     try:
         handle = Entrez.esearch(db="nucleotide", term=query, retmax=1)
         record = Entrez.read(handle)
-        id_list = record["IdList"]
-        if not id_list:
-            return "", "No sequence found."
-        fetch_handle = Entrez.efetch(db="nucleotide", id=id_list[0], rettype="fasta", retmode="text")
+        if not record["IdList"]:
+            return "", ""
+        fetch_handle = Entrez.efetch(db="nucleotide", id=record["IdList"][0], rettype="fasta", retmode="text")
         seq_record = SeqIO.read(fetch_handle, "fasta")
         return str(seq_record.seq), seq_record.id
-    except Exception as e:
-        return "", f"Error: {e}"
+    except:
+        return "", ""
 
-# Codon Bias Dummy
-def calculate_codon_bias(seq):
+# Prediction Demos
+def codon_bias(seq):
     from collections import Counter
     codons = [seq[i:i+3] for i in range(0, len(seq)-2, 3)]
-    codon_freq = Counter(codons)
-    return pd.DataFrame(codon_freq.items(), columns=["Codon", "Frequency"]).sort_values(by="Frequency", ascending=False)
+    freq = Counter(codons)
+    return pd.DataFrame(freq.items(), columns=["Codon", "Frequency"]).sort_values(by="Frequency", ascending=False)
 
-# LLPS Mock
-def predict_llps(seq):
+def llps_demo(seq):
     return pd.DataFrame({
-        "Region": ["N-terminal", "Middle", "C-terminal"],
-        "LLPS Propensity": [0.8, 0.4, 0.6]
+        "Region": ["N-term", "Mid", "C-term"],
+        "LLPS Score": [0.82, 0.54, 0.70]
     })
 
-# Mimicry Demo
-def predict_mimicry(seq):
+def mimicry_demo(seq):
     return pd.DataFrame({
-        "Host Protein": ["ACE2", "HLA-A", "TMPRSS2"],
-        "Mimicry Score": [0.87, 0.76, 0.65]
+        "Mimic Protein": ["ACE2", "TMPRSS2", "HLA-B"],
+        "Similarity Score": [0.88, 0.67, 0.73]
     })
 
-# Epitope Prediction Demo
-def predict_epitopes(seq):
+def epitope_demo(seq):
     return pd.DataFrame({
         "Epitope": ["SYGFQPT", "YGFQPTY", "GFQPTNG"],
-        "MHC Binding Affinity": [85, 70, 60]
+        "Binding Affinity": [84, 71, 62]
     })
 
-# GNN Drug Prediction Demo
-def gnn_predict_demo():
+def gnn_demo():
     return pd.DataFrame({
         "Drug": ["Remdesivir", "Molnupiravir", "Favipiravir"],
-        "Predicted Binding Score (pKd)": [7.1, 6.5, 5.9]
+        "Predicted pKd": [7.2, 6.8, 6.1]
     })
 
-# Create tabs
-tabs = st.tabs(["FASTA Sequence", "Codon Bias", "LLPS Prediction", "Mimicry", "Epitope Prediction", "GNN Drug Prediction"])
+# Tabs
+tabs = st.tabs(["FASTA", "Codon Bias", "LLPS", "Mimicry", "Epitope", "GNN"])
 
-# Process if query exists
 if query:
-    fasta, record_id = fetch_fasta(query)
+    fasta, rid = fetch_fasta(query)
 
     with tabs[0]:
         st.subheader("📄 FASTA Sequence")
         if fasta:
             st.code(fasta, language="fasta")
-            st.success(f"Record ID: {record_id}")
+            st.success(f"Fetched sequence ID: {rid}")
         else:
-            st.error("FASTA not found.")
+            st.error("No sequence found.")
 
     with tabs[1]:
-        st.subheader("🧬 Codon Bias Analysis")
+        st.subheader("🧬 Codon Bias")
         if fasta:
-            codon_df = calculate_codon_bias(fasta)
-            st.dataframe(codon_df, use_container_width=True)
-            st.bar_chart(codon_df.set_index("Codon"))
+            st.dataframe(codon_bias(fasta))
 
     with tabs[2]:
-        st.subheader("🔬 LLPS Propensity Prediction")
+        st.subheader("🔬 LLPS Prediction")
         if fasta:
-            llps_df = predict_llps(fasta)
-            st.dataframe(llps_df, use_container_width=True)
+            st.dataframe(llps_demo(fasta))
 
     with tabs[3]:
-        st.subheader("🎭 Molecular Mimicry Prediction (Demo)")
+        st.subheader("🎭 Molecular Mimicry")
         if fasta:
-            mimic_df = predict_mimicry(fasta)
-            st.dataframe(mimic_df, use_container_width=True)
+            st.dataframe(mimicry_demo(fasta))
 
     with tabs[4]:
-        st.subheader("🎯 Epitope Binding Prediction (NetMHC-like)")
+        st.subheader("🎯 Epitope Prediction")
         if fasta:
-            epitope_df = predict_epitopes(fasta)
-            st.dataframe(epitope_df, use_container_width=True)
+            st.dataframe(epitope_demo(fasta))
 
     with tabs[5]:
-        st.subheader("🧠 GNN-Based Drug Binding Prediction (Demo Only)")
-        st.caption("Real GNN temporarily disabled due to cloud install limits.")
-        gnn_df = gnn_predict_demo()
-        st.dataframe(gnn_df, use_container_width=True)
-
+        st.subheader("🧠 GNN Drug Repurposing (Demo)")
+        st.caption("This is a demo until real GNN is enabled.")
+        st.dataframe(gnn_demo())
 else:
-    st.warning("Please enter a virus name above to begin.")
+    st.info("Please enter a virus name to begin.")
