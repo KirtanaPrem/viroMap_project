@@ -1,120 +1,169 @@
 import streamlit as st
 import pandas as pd
 from Bio import Entrez, SeqIO
+import requests, time, xml.etree.ElementTree as ET
+from collections import Counter
 
-# Page Setup
-st.set_page_config(layout="wide", page_title="ViroMap", page_icon="🧬")
-st.markdown("""
-<style>
-body { background-color: white; }
-section[data-testid="stSidebar"] { background-color: #f5f5f5; }
-.stTabs [data-baseweb="tab"] {
-    width: 16%;
-    background-color: #e3f2fd;
-    padding: 10px;
-    border-radius: 8px;
-    margin-right: 5px;
-    text-align: center;
-}
-.stTabs [aria-selected="true"] {
-    background-color: #90caf9;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
+# ------------ PAGE LOOK ------------
+st.set_page_config(page_title="ViroMap", layout="wide", page_icon="🧬")
+st.markdown(
+    """
+    <style>
+        body { background:white; }
+        .stTabs [data-baseweb="tab"]{
+            width: 16%;                 /* equal width tabs */
+            text-align: center;
+            background:#e3f2fd;
+            padding:10px;
+            border-radius:8px;
+            margin-right:4px;
+        }
+        .stTabs [aria-selected="true"]{
+            background:#90caf9;
+            font-weight:bold;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# Title & Search
-st.title("🧬 ViroMap: Unified Viral Prediction Dashboard")
-query = st.text_input("🔍 Enter virus name (e.g. COVID-19, HIV):")
+st.title("🧬 ViroMap – Unified Viral Prediction Dashboard")
 
-# Search strains
-def search_strains(query):
-    Entrez.email = "example@email.com"
+# ------------ SEARCH ------------
+query = st.text_input("🔍  Enter virus name (e.g. SARS‑CoV‑2, HIV‑1, Dengue):")
+
+Entrez.email = "example@email.com"        # <-- put your real e‑mail
+
+def ncbi_search_strains(term, retmax=10):
+    """Return list of (id, description) for matching nucleotide records."""
     try:
-        handle = Entrez.esearch(db="nucleotide", term=query, retmax=10)
-        record = Entrez.read(handle)
-        ids = record["IdList"]
+        h = Entrez.esearch(db="nucleotide", term=term, retmax=retmax)
+        rec = Entrez.read(h)
+        ids = rec["IdList"]
         strains = []
         for id_ in ids:
             fetch = Entrez.efetch(db="nucleotide", id=id_, rettype="gb", retmode="text")
-            seq_record = SeqIO.read(fetch, "genbank")
-            strains.append((id_, seq_record.description))
+            rec_gb = SeqIO.read(fetch, "genbank")
+            strains.append((id_, rec_gb.description))
         return strains
-    except:
+    except Exception:
         return []
 
-# Fetch FASTA
 def fetch_fasta(ncbi_id):
-    Entrez.email = "example@email.com"
     try:
-        fetch = Entrez.efetch(db="nucleotide", id=ncbi_id, rettype="fasta", retmode="text")
-        seq_record = SeqIO.read(fetch, "fasta")
-        return str(seq_record.seq), seq_record.id
-    except:
+        f = Entrez.efetch(db="nucleotide", id=ncbi_id, rettype="fasta", retmode="text")
+        rec = SeqIO.read(f, "fasta")
+        return str(rec.seq), rec.id
+    except Exception:
         return "", ""
 
-# Mock predictions
+# ------------ REAL MIMICRY (BLASTP) ------------
+def blastp_mimicry(seq, top=10):
+    """BLAST spike AA sequence vs human proteins – return top hits DataFrame."""
+    base = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
+    # Prepare BLASTP job
+    put_data = {
+        "CMD": "Put",
+        "PROGRAM": "blastp",
+        "DATABASE": "nr",
+        "QUERY": seq,
+        "ENTREZ_QUERY": "txid9606[Organism]",   # human proteins only
+        "FORMAT_TYPE": "XML"
+    }
+    r = requests.post(base, data=put_data, timeout=30)
+    if r.status_code != 200:
+        return pd.DataFrame()
+
+    # Get RID
+    rid = None
+    for line in r.text.splitlines():
+        if line.startswith("RID"):
+            rid = line.split("=", 1)[1].strip()
+            break
+    if not rid:
+        return pd.DataFrame()
+
+    # Poll until ready (max ~1 min)
+    for _ in range(12):
+        time.sleep(5)
+        chk = requests.get(base, params={"CMD": "Get", "RID": rid})
+        if "Status=READY" in chk.text:
+            break
+
+    xml = requests.get(base, params={"CMD": "Get", "RID": rid, "FORMAT_TYPE": "XML"}).content
+    root = ET.fromstring(xml)
+    hits = []
+    for hit in root.findall(".//Hit")[:top]:
+        hsp = hit.find("Hit_hsps/Hsp")
+        if hsp is None:
+            continue
+        hits.append({
+            "Human Protein": hit.findtext("Hit_def")[:60],
+            "Acc": hit.findtext("Hit_accession"),
+            "Identity": hsp.findtext("Hsp_identity"),
+            "Align_Len": hsp.findtext("Hsp_align-len"),
+            "E‑value": hsp.findtext("Hsp_evalue")
+        })
+    return pd.DataFrame(hits)
+
+# ------------ QUICK DEMO FUNCTIONS ------------
 def codon_bias(seq):
-    from collections import Counter
     codons = [seq[i:i+3] for i in range(0, len(seq)-2, 3)]
-    freq = Counter(codons)
-    return pd.DataFrame(freq.items(), columns=["Codon", "Frequency"]).sort_values(by="Frequency", ascending=False)
+    cnt = Counter(codons)
+    total = sum(cnt.values()) or 1
+    return pd.DataFrame(
+        [{"Codon": c, "Count": n, "Freq": round(n/total, 4)} for c, n in cnt.items()]
+    ).sort_values("Freq", ascending=False)
 
 def llps_demo(seq):
-    return pd.DataFrame({"Region": ["N-term", "Mid", "C-term"], "LLPS Score": [0.82, 0.54, 0.70]})
-
-def mimicry_demo(seq):
-    return pd.DataFrame({"Mimic Protein": ["ACE2", "TMPRSS2", "HLA-B"], "Similarity Score": [0.88, 0.67, 0.73]})
+    return pd.DataFrame({"Region": ["N‑term", "Mid", "C‑term"], "LLPS score": [0.82, 0.55, 0.71]})
 
 def epitope_demo(seq):
-    return pd.DataFrame({"Epitope": ["SYGFQPT", "YGFQPTY", "GFQPTNG"], "Binding Affinity": [84, 71, 62]})
+    return pd.DataFrame({"Epitope": ["SYGFQPT", "GFQPTNG"], "MHC Affinity": [84, 62]})
 
 def gnn_demo():
-    return pd.DataFrame({"Drug": ["Remdesivir", "Molnupiravir", "Favipiravir"], "Predicted pKd": [7.2, 6.8, 6.1]})
+    return pd.DataFrame({"Drug": ["Remdesivir", "Molnupiravir"], "pKd": [7.2, 6.8]})
 
-# Logic
-selected_strain = None
-sequence = ""
-record_id = ""
+# ------------ SEARCH & FETCH ------------
+sequence = ""; rec_id = ""
 
 if query:
-    strains = search_strains(query)
+    strains = ncbi_search_strains(query)
     if strains:
-        strain_dict = {desc: id_ for id_, desc in strains}
-        choice = st.selectbox("🧬 Select a strain:", list(strain_dict.keys()))
-        selected_strain = strain_dict[choice]
-        sequence, record_id = fetch_fasta(selected_strain)
+        choice = st.selectbox("🧬  Select strain:", {d: i for i, d in strains}.keys())
+        sel_id = {d: i for i, d in strains}[choice]
+        sequence, rec_id = fetch_fasta(sel_id)
     else:
-        st.warning("No matching strains found.")
+        st.warning("No matching strains found in NCBI.")
 
-tabs = st.tabs(["FASTA", "Codon Bias", "LLPS", "Mimicry", "Epitope", "GNN"])
+# ------------ TABS ------------
+tabs = st.tabs(["FASTA", "Codon", "LLPS", "Mimicry", "Epitope", "GNN"])
 
 if sequence:
     with tabs[0]:
-        st.subheader("📄 FASTA Sequence")
         st.code(sequence, language="fasta")
-        st.success(f"Fetched: {record_id}")
+        st.success(f"NCBI record: {rec_id}")
 
     with tabs[1]:
-        st.subheader("🧬 Codon Bias")
-        df = codon_bias(sequence)
-        st.dataframe(df)
+        st.dataframe(codon_bias(sequence), height=300)
 
     with tabs[2]:
-        st.subheader("🔬 LLPS Prediction")
         st.dataframe(llps_demo(sequence))
 
     with tabs[3]:
-        st.subheader("🎭 Molecular Mimicry")
-        st.dataframe(mimicry_demo(sequence))
+        st.subheader("Running BLAST vs human proteome…")
+        with st.spinner("⏳"):
+            mimic_df = blastp_mimicry(sequence)
+        if not mimic_df.empty:
+            st.dataframe(mimic_df)
+        else:
+            st.warning("No strong sequence mimicry hits found.")
 
     with tabs[4]:
-        st.subheader("🎯 Epitope Prediction")
         st.dataframe(epitope_demo(sequence))
 
     with tabs[5]:
-        st.subheader("🧠 GNN Drug Repurposing (Demo)")
-        st.caption("This is a mock GNN prediction. Real GNN integration coming soon.")
+        st.caption("Demo GNN results (real model disabled in Cloud).")
         st.dataframe(gnn_demo())
 else:
-    st.info("Type a virus name and select a strain to begin.")
+    st.info("Type a virus name and pick a strain to begin.")
