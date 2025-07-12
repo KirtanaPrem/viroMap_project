@@ -1,3 +1,7 @@
 streamlit
 pandas
 biopython
+matplotlib
+numpy
+scikit-learn
+
