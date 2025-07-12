@@ -1,16 +1,22 @@
 import streamlit as st
 import pandas as pd
 from Bio import Entrez, SeqIO
+import matplotlib.pyplot as plt
 
-# Set up page
+# Setup
 st.set_page_config(layout="wide", page_title="ViroMap", page_icon="🧬")
 st.markdown(
     """
     <style>
         body { background-color: white; }
+        section[data-testid="stSidebar"] { background-color: #f5f5f5; }
         .stTabs [data-baseweb="tab"] {
+            width: 16%;
             background-color: #e3f2fd;
+            padding: 10px;
             border-radius: 8px;
+            margin-right: 5px;
+            text-align: center;
         }
         .stTabs [aria-selected="true"] {
             background-color: #90caf9;
@@ -22,23 +28,32 @@ st.markdown(
 )
 
 st.title("🧬 ViroMap: Unified Viral Prediction Dashboard")
-query = st.text_input("🔍 Search Virus Name (e.g. SARS-CoV-2, HIV, Influenza):")
+query = st.text_input("🔍 Enter virus name (e.g. COVID-19, HIV, Influenza):")
 
-# Helper: Fetch sequence
-def fetch_fasta(query):
+# Step 1: Search for matching strains from NCBI
+def search_strains(query):
     Entrez.email = "example@email.com"
     try:
-        handle = Entrez.esearch(db="nucleotide", term=query, retmax=1)
+        handle = Entrez.esearch(db="nucleotide", term=query, retmax=10)
         record = Entrez.read(handle)
-        if not record["IdList"]:
-            return "", ""
-        fetch_handle = Entrez.efetch(db="nucleotide", id=record["IdList"][0], rettype="fasta", retmode="text")
-        seq_record = SeqIO.read(fetch_handle, "fasta")
-        return str(seq_record.seq), seq_record.id
+        ids = record["IdList"]
+        strains = []
+        for id_ in ids:
+            fetch = Entrez.efetch(db="nucleotide", id=id_, rettype="gb", retmode="text")
+            seq_record = SeqIO.read(fetch, "genbank")
+            strains.append((id_, seq_record.description))
+        return strains
     except:
-        return "", ""
+        return []
 
-# Prediction Demos
+# Step 2: Fetch FASTA
+def fetch_fasta_from_id(ncbi_id):
+    Entrez.email = "example@email.com"
+    fetch = Entrez.efetch(db="nucleotide", id=ncbi_id, rettype="fasta", retmode="text")
+    seq_record = SeqIO.read(fetch, "fasta")
+    return str(seq_record.seq), seq_record.id
+
+# Demos
 def codon_bias(seq):
     from collections import Counter
     codons = [seq[i:i+3] for i in range(0, len(seq)-2, 3)]
@@ -69,43 +84,51 @@ def gnn_demo():
         "Predicted pKd": [7.2, 6.8, 6.1]
     })
 
+# === Workflow ===
+selected_strain = None
+sequence = ""
+record_id = ""
+
+if query:
+    strains = search_strains(query)
+    if strains:
+        options = {desc: id_ for id_, desc in strains}
+        choice = st.selectbox("🧬 Select a matching strain:", list(options.keys()))
+        selected_strain = options[choice]
+        sequence, record_id = fetch_fasta_from_id(selected_strain)
+    else:
+        st.warning("No matching strains found.")
+
 # Tabs
 tabs = st.tabs(["FASTA", "Codon Bias", "LLPS", "Mimicry", "Epitope", "GNN"])
 
-if query:
-    fasta, rid = fetch_fasta(query)
-
+if sequence:
     with tabs[0]:
         st.subheader("📄 FASTA Sequence")
-        if fasta:
-            st.code(fasta, language="fasta")
-            st.success(f"Fetched sequence ID: {rid}")
-        else:
-            st.error("No sequence found.")
+        st.code(sequence, language="fasta")
+        st.success(f"Record ID: {record_id}")
 
     with tabs[1]:
         st.subheader("🧬 Codon Bias")
-        if fasta:
-            st.dataframe(codon_bias(fasta))
+        df = codon_bias(sequence)
+        st.dataframe(df)
+        st.bar_chart(df.set_index("Codon"))
 
     with tabs[2]:
         st.subheader("🔬 LLPS Prediction")
-        if fasta:
-            st.dataframe(llps_demo(fasta))
+        st.dataframe(llps_demo(sequence))
 
     with tabs[3]:
         st.subheader("🎭 Molecular Mimicry")
-        if fasta:
-            st.dataframe(mimicry_demo(fasta))
+        st.dataframe(mimicry_demo(sequence))
 
     with tabs[4]:
         st.subheader("🎯 Epitope Prediction")
-        if fasta:
-            st.dataframe(epitope_demo(fasta))
+        st.dataframe(epitope_demo(sequence))
 
     with tabs[5]:
         st.subheader("🧠 GNN Drug Repurposing (Demo)")
-        st.caption("This is a demo until real GNN is enabled.")
+        st.caption("This is a demo. Real GNN model is optional later.")
         st.dataframe(gnn_demo())
 else:
-    st.info("Please enter a virus name to begin.")
+    st.info("Start by entering a virus name and selecting a strain.")
