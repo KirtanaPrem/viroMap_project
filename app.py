@@ -5,50 +5,58 @@ from collections import Counter
 from math import exp, log
 from Bio import Entrez, SeqIO
 
-# Setup Entrez (use your email to avoid NCBI blocking)
-Entrez.email = "your_email@example.com"  # Replace with your email
+Entrez.email = "your_email@example.com"
 
-# Page config
 st.set_page_config(page_title="ViroMap", layout="wide")
-st.title("🧬 ViroMap: Unified Viral Data Analysis Platform")
+st.title("ViroMap: Viral Genome Analysis Platform")
 
-# Virus name input
-virus_name = st.text_input("🔍 Enter virus name (e.g., SARS-CoV-2, HIV, Zika virus):")
+keyword = st.text_input("Enter virus keyword (e.g., rabies, influenza, SARS-CoV-2):")
 
-# Function to fetch FASTA from NCBI using Entrez
-def fetch_fasta_by_virus_name(name):
+strain_options = []
+strain_dict = {}
+
+if keyword:
     try:
-        search = Entrez.esearch(db="nucleotide", term=f"{name}[ORGN] AND complete genome", retmax=1)
-        result = Entrez.read(search)
-        ids = result["IdList"]
-        if ids:
-            handle = Entrez.efetch(db="nucleotide", id=ids[0], rettype="fasta", retmode="text")
-            fasta_data = handle.read()
-            return fasta_data
-        else:
-            return "No sequence found for this virus."
+        search_handle = Entrez.esearch(db="nucleotide", term=keyword + " AND complete genome", retmax=5)
+        search_results = Entrez.read(search_handle)
+        id_list = search_results["IdList"]
+
+        if id_list:
+            summary_handle = Entrez.esummary(db="nucleotide", id=",".join(id_list))
+            summaries = Entrez.read(summary_handle)
+            for docsum in summaries:
+                uid = docsum["Id"]
+                title = docsum["Title"]
+                label = f"{uid} | {title[:80]}..."
+                strain_options.append(label)
+                strain_dict[label] = uid
     except Exception as e:
-        return f"Error fetching sequence: {e}"
+        st.error(f"Error fetching strains: {e}")
 
-# Fetch the FASTA dynamically
-fasta = fetch_fasta_by_virus_name(virus_name) if virus_name else ""
+selected_strain = st.selectbox("Select a strain to analyze", strain_options) if strain_options else None
 
-# Tabs
+def fetch_fasta_by_id(ncbi_id):
+    try:
+        handle = Entrez.efetch(db="nucleotide", id=ncbi_id, rettype="fasta", retmode="text")
+        return handle.read()
+    except:
+        return ""
+
+fasta = fetch_fasta_by_id(strain_dict[selected_strain]) if selected_strain else ""
+
 tabs = st.tabs(["FASTA", "Codon Bias", "LLPS", "Epitope Mimicry", "GNN Prediction"])
 
-# Tab 0: FASTA
 with tabs[0]:
-    st.header("📄 FASTA Sequence")
+    st.header("FASTA Sequence")
     if fasta and fasta.startswith(">"):
         st.code(fasta, language="fasta")
     elif fasta:
         st.warning(fasta)
     else:
-        st.info("Search for a virus to display its FASTA sequence.")
+        st.info("Search and select a strain to view its sequence.")
 
-# Tab 1: Codon Bias
 with tabs[1]:
-    st.header("🧬 Codon Bias Metrics")
+    st.header("Codon Bias Metrics")
 
     def get_codon_list(seq):
         return [seq[i:i+3] for i in range(0, len(seq)-2, 3) if len(seq[i:i+3]) == 3]
@@ -108,20 +116,63 @@ with tabs[1]:
         }
 
         st.dataframe(pd.DataFrame(metrics.items(), columns=["Metric", "Value"]))
-    elif virus_name:
-        st.warning("FASTA not available or too short to compute metrics.")
+    elif selected_strain:
+        st.warning("Sequence too short or could not compute metrics.")
     else:
-        st.info("Enter a virus name above to begin analysis.")
+        st.info("Select a strain to compute codon bias.")
 
-# Tabs 2–4: Placeholders
 with tabs[2]:
-    st.header("💧 LLPS Prediction (Coming Soon)")
-    st.info("This module will predict liquid-liquid phase separation using sequence features.")
+    st.header("LLPS Prediction")
+
+    def percent_disorder(seq):
+        disordered = sum(1 for aa in seq if aa in "PESQKRDG")  # simplified
+        return round(disordered / len(seq) * 100, 2) if seq else 0
+
+    def detect_prion_like(seq):
+        return any(motif in seq for motif in ["QQ", "QN", "NQ", "SS", "YG", "RG"])
+
+    def detect_lcr(seq):
+        count = 0
+        for i in range(len(seq)-6):
+            window = seq[i:i+6]
+            if len(set(window)) <= 2:
+                count += 1
+        return count
+
+    def llps_propensity(seq):
+        if not seq:
+            return 0
+        score = 0
+        score += percent_disorder(seq) / 100
+        score += detect_lcr(seq) / 50
+        if detect_prion_like(seq):
+            score += 0.3
+        return round(min(score, 1.0), 2)
+
+    if fasta.startswith(">"):
+        clean_seq = "".join(fasta.splitlines()[1:]).replace(" ", "").replace("\n", "").upper()
+        protein_seq = clean_seq.replace("T", "U")  # placeholder for RNA-to-protein logic
+
+        disorder = percent_disorder(protein_seq)
+        prion = detect_prion_like(protein_seq)
+        lcr_count = detect_lcr(protein_seq)
+        llps_score = llps_propensity(protein_seq)
+
+        data = {
+            "LLPS Propensity Score (0–1)": llps_score,
+            "Percent Disorder": disorder,
+            "Prion-like Motifs Present": "Yes" if prion else "No",
+            "Low Complexity Regions": lcr_count
+        }
+
+        st.dataframe(pd.DataFrame(data.items(), columns=["Metric", "Value"]))
+    else:
+        st.info("Select a strain to view LLPS-related predictions.")
 
 with tabs[3]:
-    st.header("🎯 Epitope Mimicry (Coming Soon)")
-    st.info("This module will detect epitope mimicry with host proteins.")
+    st.header("Epitope Mimicry (Coming Soon)")
+    st.info("This module will identify host-virus mimicry.")
 
 with tabs[4]:
-    st.header("🧠 GNN Drug Prediction (Coming Soon)")
-    st.info("This will use Graph Neural Networks to predict antiviral drug interactions.")
+    st.header("GNN Drug Prediction (Coming Soon)")
+    st.info("This module will use GNNs to predict antiviral targets.")
