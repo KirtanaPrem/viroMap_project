@@ -125,7 +125,3 @@ with tabs[3]:
 with tabs[4]:
     st.header("🧠 GNN Drug Prediction (Coming Soon)")
     st.info("This will use Graph Neural Networks to predict antiviral drug interactions.")
-
-# Footer
-st.markdown("---")
-st.caption("Created with ❤️ by [Your Name] | ViroMap Project | Bioinformatics Streamlit App")
