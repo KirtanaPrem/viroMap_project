@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 from collections import Counter
 from math import exp, log
-from Bio import Entrez, SeqIO
+from Bio import Entrez
 
-Entrez.email = "your_email@example.com"
+Entrez.email = "your_email@example.com"  # Replace with your email
 
 st.set_page_config(page_title="ViroMap", layout="wide")
 st.title("ViroMap: Viral Genome Analysis Platform")
@@ -51,12 +50,16 @@ with tabs[0]:
     if fasta and fasta.startswith(">"):
         st.code(fasta, language="fasta")
     elif fasta:
-        st.warning(fasta)
+        st.warning("No valid FASTA found for selected strain.")
     else:
         st.info("Search and select a strain to view its sequence.")
 
 with tabs[1]:
     st.header("Codon Bias Metrics")
+
+    if not fasta or not fasta.startswith(">"):
+        st.warning("No valid sequence found. Please try a different strain.")
+        st.stop()
 
     def get_codon_list(seq):
         return [seq[i:i+3] for i in range(0, len(seq)-2, 3) if len(seq[i:i+3]) == 3]
@@ -103,29 +106,28 @@ with tabs[1]:
         homo = sum(c * (c - 1) for c in freqs.values())
         return round(61 / (1 + homo / (n * (n - 1))), 2) if n > 1 else 0
 
-    if fasta.startswith(">"):
-        clean_seq = "".join(fasta.splitlines()[1:]).replace(" ", "").replace("\n", "").upper()
-        codons = get_codon_list(clean_seq)
+    clean_seq = "".join(fasta.splitlines()[1:]).replace(" ", "").replace("\n", "").upper()
+    codons = get_codon_list(clean_seq)
 
-        metrics = {
-            "Codon Adaptation Index (CAI)": simple_cai(clean_seq),
-            "Rare Codon Frequency": rare_codon_freq(codons),
-            "Codon Pair Bias (CPB)": codon_pair_bias(codons),
-            "Codon Volatility": volatility(codons),
-            "Effective Number of Codons (ENC)": enc(codons)
-        }
+    metrics = {
+        "Codon Adaptation Index (CAI)": simple_cai(clean_seq),
+        "Rare Codon Frequency": rare_codon_freq(codons),
+        "Codon Pair Bias (CPB)": codon_pair_bias(codons),
+        "Codon Volatility": volatility(codons),
+        "Effective Number of Codons (ENC)": enc(codons)
+    }
 
-        st.dataframe(pd.DataFrame(metrics.items(), columns=["Metric", "Value"]))
-    elif selected_strain:
-        st.warning("Sequence too short or could not compute metrics.")
-    else:
-        st.info("Select a strain to compute codon bias.")
+    st.dataframe(pd.DataFrame(metrics.items(), columns=["Metric", "Value"]))
 
 with tabs[2]:
     st.header("LLPS Prediction")
 
+    if not fasta or not fasta.startswith(">"):
+        st.warning("No valid sequence found. Please try a different strain.")
+        st.stop()
+
     def percent_disorder(seq):
-        disordered = sum(1 for aa in seq if aa in "PESQKRDG")  # simplified
+        disordered = sum(1 for aa in seq if aa in "PESQKRDG")
         return round(disordered / len(seq) * 100, 2) if seq else 0
 
     def detect_prion_like(seq):
@@ -149,30 +151,27 @@ with tabs[2]:
             score += 0.3
         return round(min(score, 1.0), 2)
 
-    if fasta.startswith(">"):
-        clean_seq = "".join(fasta.splitlines()[1:]).replace(" ", "").replace("\n", "").upper()
-        protein_seq = clean_seq.replace("T", "U")  # placeholder for RNA-to-protein logic
+    clean_seq = "".join(fasta.splitlines()[1:]).replace(" ", "").replace("\n", "").upper()
+    protein_seq = clean_seq.replace("T", "U")
 
-        disorder = percent_disorder(protein_seq)
-        prion = detect_prion_like(protein_seq)
-        lcr_count = detect_lcr(protein_seq)
-        llps_score = llps_propensity(protein_seq)
+    disorder = percent_disorder(protein_seq)
+    prion = detect_prion_like(protein_seq)
+    lcr_count = detect_lcr(protein_seq)
+    llps_score = llps_propensity(protein_seq)
 
-        data = {
-            "LLPS Propensity Score (0–1)": llps_score,
-            "Percent Disorder": disorder,
-            "Prion-like Motifs Present": "Yes" if prion else "No",
-            "Low Complexity Regions": lcr_count
-        }
+    data = {
+        "LLPS Propensity Score (0–1)": llps_score,
+        "Percent Disorder": disorder,
+        "Prion-like Motifs Present": "Yes" if prion else "No",
+        "Low Complexity Regions": lcr_count
+    }
 
-        st.dataframe(pd.DataFrame(data.items(), columns=["Metric", "Value"]))
-    else:
-        st.info("Select a strain to view LLPS-related predictions.")
+    st.dataframe(pd.DataFrame(data.items(), columns=["Metric", "Value"]))
 
 with tabs[3]:
-    st.header("Epitope Mimicry (Coming Soon)")
+    st.header("Epitope Mimicry")
     st.info("This module will identify host-virus mimicry.")
 
 with tabs[4]:
-    st.header("GNN Drug Prediction (Coming Soon)")
+    st.header("GNN Drug Prediction")
     st.info("This module will use GNNs to predict antiviral targets.")
