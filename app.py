@@ -134,7 +134,7 @@ with tabs[1]:
         """Calculate simplified Codon Adaptation Index."""
         codons = get_codons(seq)
         weights = [CAI_REFERENCE.get(codon, 0.01) for codon in codons]
-        return round(exp(sum(log(w) for w in weights) / len(weights)), 4) if weights else 0
+        return round(exp(sum(log(w) for w in weights) / len(weights), 4) if weights else 0
 
     def calculate_enc(codons):
         """Calculate Effective Number of Codons."""
