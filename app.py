@@ -4,12 +4,13 @@ from collections import Counter
 from math import exp, log
 from Bio import Entrez
 
-Entrez.email = "your_email@example.com"  # Replace with your actual email
+# Safe default email (required by Entrez)
+Entrez.email = "viromap@demo.org"
 
 st.set_page_config(page_title="ViroMap", layout="wide")
 st.title("ViroMap")
 
-# Search input
+# --- Input: Virus Keyword ---
 keyword = st.text_input("Enter virus keyword (e.g., rabies, influenza, SARS-CoV-2):")
 
 strain_options = []
@@ -44,9 +45,10 @@ def fetch_fasta_by_id(ncbi_id):
 
 fasta = fetch_fasta_by_id(strain_dict[selected_strain]) if selected_strain else ""
 
+# --- Tabs ---
 tabs = st.tabs(["FASTA", "Codon Bias", "LLPS", "Epitope Mimicry", "GNN Prediction"])
 
-# Tab 0: FASTA
+# --- Tab 0: FASTA ---
 with tabs[0]:
     st.header("FASTA Sequence")
     if fasta and fasta.startswith(">"):
@@ -56,7 +58,7 @@ with tabs[0]:
     else:
         st.info("Search and select a strain to view its sequence.")
 
-# Tab 1: Codon Bias
+# --- Tab 1: Codon Bias ---
 with tabs[1]:
     st.header("Codon Bias Metrics")
 
@@ -122,7 +124,7 @@ with tabs[1]:
 
     st.dataframe(pd.DataFrame(metrics.items(), columns=["Metric", "Value"]))
 
-# Tab 2: LLPS
+# --- Tab 2: LLPS ---
 with tabs[2]:
     st.header("LLPS Prediction")
 
@@ -156,7 +158,7 @@ with tabs[2]:
         return round(min(score, 1.0), 2)
 
     clean_seq = "".join(fasta.splitlines()[1:]).replace(" ", "").replace("\n", "").upper()
-    protein_seq = clean_seq.replace("T", "U")  # pseudo translation to RNA-like for LLPS
+    protein_seq = clean_seq.replace("T", "U")  # placeholder "translation"
 
     disorder = percent_disorder(protein_seq)
     prion = detect_prion_like(protein_seq)
@@ -172,12 +174,12 @@ with tabs[2]:
 
     st.dataframe(pd.DataFrame(data.items(), columns=["Metric", "Value"]))
 
-# Tab 3: Epitope Mimicry (placeholder)
+# --- Tab 3: Epitope Mimicry (Placeholder) ---
 with tabs[3]:
     st.header("Epitope Mimicry")
     st.info("This module will identify host-virus mimicry (coming soon).")
 
-# Tab 4: GNN Prediction (placeholder)
+# --- Tab 4: GNN Prediction (Placeholder) ---
 with tabs[4]:
     st.header("GNN Drug Prediction")
     st.info("This module will use Graph Neural Networks to predict antiviral drugs (coming soon).")
