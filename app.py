@@ -156,7 +156,7 @@ with tabs[1]:
         "Effective Number of Codons (ENC)": calculate_enc(codons)
     }
 
-    st.dataframe(pd.DataFrame(metrics.items(), columns=["Metric", "Value"]))
+    st.dataframe(pd.DataFrame(list(metrics.items()), columns=["Metric", "Value"]))
 
 # Tab 2: LLPS
 with tabs[2]:
@@ -211,7 +211,7 @@ with tabs[2]:
         "Low Complexity Regions": detect_lcr(protein_seq)
     }
 
-    st.dataframe(pd.DataFrame(data.items(), columns=["Metric", "Value"]))
+    st.dataframe(pd.DataFrame(list(data.items()), columns=["Metric", "Value"]))
 
 # Tab 3: Epitope Mimicry
 with tabs[3]:
